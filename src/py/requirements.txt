@@ -1,0 +1,11 @@
+# RU-PlumeScan — Python runtime dependencies
+# См. RNA.md §5.6
+earthengine-api>=0.1.380
+geemap>=0.32
+pandas>=2.0
+requests>=2.30
+shapely>=2.0
+pyproj>=3.6
+scipy>=1.11
+numpy>=1.24
+pydantic>=2.5

@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+*.egg
+build/
+dist/
+.venv/
+venv/
+env/
+ENV/
+
+# IDE / editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Claude Code local session state
+.claude/
+
+# Environment / credentials
+.env
+.env.local
+*.local
+
+# GEE credentials (system-wide path is in user home; ignore any local stash)
+.config/earthengine/
+*.gee_credentials
+
+# Data files (large or downloaded reference catalogs)
+*.tif
+*.tiff
+*.nc
+*.h5
+*.hdf
+*.geojson.gz
+*.zip
+*.tar.gz
+data/cache/
+data/downloads/
+src/py/_local_cache/
+
+# Logs
+logs/
+*.log
+
+# Output artifacts (local only — published outputs go to GEE Assets / Zenodo)
+outputs/
+results/
+local_runs/

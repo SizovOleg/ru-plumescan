@@ -1,0 +1,59 @@
+cff-version: 1.2.0
+title: "RU-PlumeScan: Configurable Detection Surface for TROPOMI gas anomalies over Western Siberia"
+message: "If you use this software, please cite it using the metadata from this file."
+type: software
+authors:
+  - given-names: "Oleg"
+    family-names: "Sizov"
+    affiliation: "Oil and Gas Research Institute of the Russian Academy of Sciences (IPNG RAS)"
+repository-code: "https://github.com/SizovOleg/ru-plumescan"
+url: "https://github.com/SizovOleg/ru-plumescan"
+version: "0.5.0-dev"
+date-released: "2026-04-25"
+keywords:
+  - "TROPOMI"
+  - "Sentinel-5P"
+  - "methane"
+  - "CH4"
+  - "NO2"
+  - "SO2"
+  - "remote sensing"
+  - "Western Siberia"
+  - "Google Earth Engine"
+  - "plume detection"
+  - "atmospheric composition"
+license: MIT
+abstract: >-
+  RU-PlumeScan is a regional, configurable workbench for detecting methane,
+  nitrogen dioxide, and sulfur dioxide anomalies over Western Siberia using
+  TROPOMI/Sentinel-5P data in Google Earth Engine. It implements per-gas
+  detection algorithms adapted from peer-reviewed sources (Schuit et al. 2023
+  for CH4, Beirle et al. 2019 for NO2, Fioletov et al. 2020 for SO2),
+  supports configurable parameter Presets, and includes a Reference Catalog
+  Adapter for cross-source comparison with Schuit 2023, UNEP IMEO MARS, and
+  CAMS Methane Hotspot Explorer.
+references:
+  - type: article
+    authors:
+      - family-names: "Schuit"
+        given-names: "B. J."
+    title: "Automated detection and monitoring of methane super-emitters using satellite data"
+    journal: "Atmospheric Chemistry and Physics"
+    year: 2023
+    doi: "10.5194/acp-23-9071-2023"
+  - type: article
+    authors:
+      - family-names: "Beirle"
+        given-names: "S."
+    title: "Pinpointing nitrogen oxide emissions from space"
+    journal: "Science Advances"
+    year: 2019
+    doi: "10.1126/sciadv.aax9800"
+  - type: article
+    authors:
+      - family-names: "Fioletov"
+        given-names: "V. E."
+    title: "Anthropogenic and volcanic point source SO2 emissions derived from TROPOMI on board Sentinel-5 Precursor"
+    journal: "Atmospheric Chemistry and Physics"
+    year: 2020
+    doi: "10.5194/acp-20-5591-2020"

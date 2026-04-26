@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ru-plumescan-py"
+version = "0.5.0-dev"
+description = "Python utilities for RU-PlumeScan: RCA ingesters, SO2 plume fit, synthetic injection, sensitivity sweep"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Oleg Sizov", email = "" },
+]
+keywords = ["TROPOMI", "Sentinel-5P", "methane", "remote sensing", "Google Earth Engine"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+    "Topic :: Scientific/Engineering :: GIS",
+]
+
+[project.urls]
+Repository = "https://github.com/SizovOleg/ru-plumescan"
+Documentation = "https://github.com/SizovOleg/ru-plumescan/blob/main/Algorithm.md"
+Issues = "https://github.com/SizovOleg/ru-plumescan/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["rca*", "so2_fit*", "synthetic*", "analysis*", "setup*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["tests/fixtures"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",  # line too long — handled by black
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]  # allow assert in tests
+"__init__.py" = ["F401"]  # allow unused imports in package init
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+]
+
+[tool.mypy]
+python_version = "3.10"
+strict = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+ignore_missing_imports = true
