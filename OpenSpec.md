@@ -463,6 +463,64 @@
 
 ---
 
+## 4a. Minor clarifications (sub-implementation refinements, не CHANGE)
+
+Не требуют formal CHANGE entry — это operational refinements в рамках
+existing architectural decisions. Документируются здесь для traceability.
+
+### MC-2026-04-27-A — Юганский useable-area escalation gate revised
+
+- Date: 2026-04-27
+- Initiator: Researcher (P-00.1 closure review)
+- Type: sub-implementation clarification (не Algorithm patch, не RNA patch)
+- Affected document: `data/protected_areas/README.md` (added section "Юганский: useable area & escalation gate")
+- Reason: При P-00.1 ingestion обнаружено что Юганский useable area после
+  10 km internal buffer = 2946 km² ≈ 60 TROPOMI pixels at 7 km grid. Initial
+  concern: per-pixel threshold ≥100 obs/pixel-month рискованный.
+- Clarification: Reference Baseline construction (Algorithm v2.3 §3.4.0)
+  использует **zone-aggregate** approach (single value per month per zone),
+  не per-pixel. Total obs contributing ≈ 60 px × 30 obs × 6 years ≈ 10,800/month.
+  Revised escalation gate: minimum **1000 zone-aggregate obs per month per zone**.
+- Decision:
+  - Internal_buffer 10 km для Юганского — KEEP (защита от Самотлор/Salym advection критична).
+  - Per-pixel threshold ≥100 obs/pixel-month сохраняется как secondary check
+    для regional climatology (Algorithm §3.4.1).
+  - Zone-aggregate threshold ≥1000 obs/month — primary gate для reference baseline.
+- Verification: P-01.0a `validate_zone_baseline_observations()` проверит
+  на real data, escalate если any zone fails.
+
+### MC-2026-04-27-B — VIIRS proxy quantitative analysis deferred
+
+- Date: 2026-04-27
+- Initiator: Researcher (P-00.1 closure review)
+- Type: TODO scheduling (post-merge, not blocker)
+- Affected document: `docs/KNOWN_TODOS.md` (TD-0001 entry created)
+- Reason: 474 VIIRS / 39 manual+GPPD = 12:1 ratio. Visual sanity passed
+  (clusters in expected oil&gas regions, sparse в clean taiga). Quantitative
+  refinement (full histogram, clustering metrics, false positive analysis)
+  отложен до Phase 2A когда detection runs покажут real false positive rate.
+- Trigger: revisit if false positive rate в clean regions > 5% по Phase 2A.
+- Decision: not blocker for P-00.1 merge; tracked в `docs/KNOWN_TODOS.md`.
+
+### MC-2026-04-27-C — Алтайский +4.5% area diagnostic note
+
+- Date: 2026-04-27
+- Initiator: Researcher (P-00.1 closure review)
+- Type: diagnostic information for P-01.0a Алтайский QA test
+- Affected document: `data/protected_areas/README.md` (added subsection
+  "Алтайский +4.5% diagnostic note")
+- Reason: Алтайский measured 8411 vs documented 8810 km² (+4.5%) — внутри
+  R2 tolerance, но для `optional_pending_quality` zone это diagnostic signal,
+  не just acceptable mismatch.
+- Possible causes documented: boundary expansion 1980s-2010s, polygon
+  simplification (Nominatim), Телецкое озеро аква inclusion/exclusion (water
+  surface dramatically different TROPOMI XCH₄ signature).
+- Trigger: P-01.0a Алтайский QA test (Algorithm §11.4) либо pass (включить
+  без re-clipping) либо fail (investigate root cause, possibly TD-0004
+  full-resolution polygon download).
+
+---
+
 ## 5. Archived changes (superseded)
 
 ### CHANGE-A001 [ARCHIVED] — Composite-based detection (V1 approach)
