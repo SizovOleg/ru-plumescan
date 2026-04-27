@@ -40,6 +40,13 @@ FOLDERS: tuple[str, ...] = (
     "RuPlumeScan/catalog/NO2",
     "RuPlumeScan/catalog/SO2",
     "RuPlumeScan/refs",
+    # Reference Clean Zones (CHANGE-0017, DNA v2.2 §1.2)
+    "RuPlumeScan/reference",
+    # Reference Baselines per gas (CHANGE-0017, Algorithm v2.3 §11)
+    "RuPlumeScan/baselines",
+    "RuPlumeScan/baselines/CH4",
+    "RuPlumeScan/baselines/NO2",
+    "RuPlumeScan/baselines/SO2",
     "RuPlumeScan/comparisons",
     "RuPlumeScan/comparisons/ours_vs_schuit2023",
     "RuPlumeScan/comparisons/ours_vs_imeo_mars",
