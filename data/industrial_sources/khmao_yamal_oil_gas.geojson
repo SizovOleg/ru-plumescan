@@ -1,0 +1,162 @@
+{
+  "type": "FeatureCollection",
+  "name": "khmao_yamal_oil_gas",
+  "description": "Major oil & gas production fields, processing plants, and compressor stations of KhMAO-Yugra and Yamalo-Nenets autonomous okrugs. CRITICAL ANCHORS provided by researcher; additional points from OSM Nominatim with type=industrial verification.",
+  "_metadata": {
+    "ingestion_date": "2026-04-27",
+    "compiler": "RU-PlumeScan P-00.1 v2 (CHANGE-0017)",
+    "verification_standard": "OSM (industrial=*, landuse=industrial) primary; researcher critical anchors for top fields",
+    "license": "ODbL-1.0 (OSM-derived); CRITICAL_ANCHORS public domain",
+    "note": "Many large gas fields (Заполярное, Самотлорское, Приобское, Юрхаровское) lack OSM polygon coverage and are represented only via researcher-provided CRITICAL ANCHORS. Coverage gap is filled by VIIRS bright proxy and GPPD subset where applicable."
+  },
+  "crs": {
+    "type": "name",
+    "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [68.57, 70.40] },
+      "properties": {
+        "source_id": "ru_yamal_bovanenkovo",
+        "source_type": "oil_gas",
+        "source_subtype": "production_field",
+        "source_name": "Бованенковское нефтегазоконденсатное месторождение",
+        "source_name_en": "Bovanenkovo gas-condensate field",
+        "country": "RU",
+        "region": "YaNAO",
+        "operator": "Газпром добыча Надым",
+        "estimated_kt_per_year_ch4": null,
+        "decommissioned": false,
+        "coordinates_source": "researcher_critical_anchor",
+        "coordinates_verified_date": "2026-04-26",
+        "data_license": "researcher_contributed_public_domain",
+        "notes": "Полуостров Ямал. Крупнейшее газовое месторождение полуострова. Algorithm §13.1 sanity test target."
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [76.85, 66.05] },
+      "properties": {
+        "source_id": "ru_yanao_urengoyskoe",
+        "source_type": "oil_gas",
+        "source_subtype": "production_field",
+        "source_name": "Уренгойское нефтегазоконденсатное месторождение",
+        "source_name_en": "Urengoy gas-condensate field",
+        "country": "RU",
+        "region": "YaNAO",
+        "operator": "Газпром добыча Уренгой",
+        "estimated_kt_per_year_ch4": null,
+        "decommissioned": false,
+        "coordinates_source": "researcher_critical_anchor",
+        "coordinates_verified_date": "2026-04-26",
+        "data_license": "researcher_contributed_public_domain",
+        "notes": "Второе крупнейшее газовое месторождение мира по запасам."
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [75.05, 67.78] },
+      "properties": {
+        "source_id": "ru_yanao_yamburgskoe",
+        "source_type": "oil_gas",
+        "source_subtype": "production_field",
+        "source_name": "Ямбургское нефтегазоконденсатное месторождение",
+        "source_name_en": "Yamburg gas-condensate field",
+        "country": "RU",
+        "region": "YaNAO",
+        "operator": "Газпром добыча Ямбург",
+        "estimated_kt_per_year_ch4": null,
+        "decommissioned": false,
+        "coordinates_source": "researcher_critical_anchor",
+        "coordinates_verified_date": "2026-04-26",
+        "data_license": "researcher_contributed_public_domain",
+        "notes": "Тазовский полуостров."
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [79.7687, 66.8789] },
+      "properties": {
+        "source_id": "ru_yanao_tazovskoe",
+        "source_type": "oil_gas",
+        "source_subtype": "production_field",
+        "source_name": "Тазовское нефтегазоконденсатное месторождение",
+        "source_name_en": "Tazovsky gas-condensate field",
+        "country": "RU",
+        "region": "YaNAO",
+        "operator": "Газпром нефть",
+        "estimated_kt_per_year_ch4": null,
+        "decommissioned": false,
+        "coordinates_source": "OSM-way-431616797",
+        "coordinates_verified_date": "2026-04-27",
+        "data_license": "OSM-ODbL-1.0",
+        "data_attribution": "© OpenStreetMap contributors",
+        "notes": "OSM tag landuse=industrial. Тазовский район ЯНАО."
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [76.70, 60.70] },
+      "properties": {
+        "source_id": "ru_khmao_samotlor",
+        "source_type": "oil_gas",
+        "source_subtype": "production_field",
+        "source_name": "Самотлорское нефтяное месторождение",
+        "source_name_en": "Samotlor oil field",
+        "country": "RU",
+        "region": "KhMAO",
+        "operator": "Роснефть",
+        "estimated_kt_per_year_ch4": null,
+        "decommissioned": false,
+        "coordinates_source": "researcher_manual_entry",
+        "coordinates_verified_date": "2026-04-26",
+        "data_license": "researcher_contributed_public_domain",
+        "estimate_source": "крупнейшее нефтяное месторождение РФ, активная разработка 2022-2024",
+        "notes": "Не найдено в OSM (Nominatim multiple queries MISS). Координата от исследователя (ИПНГ РАН). Active production 2022-2024 — APG utilization but residual flaring possible."
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [77.00, 66.50] },
+      "properties": {
+        "source_id": "ru_yanao_zapolyarnoe",
+        "source_type": "oil_gas",
+        "source_subtype": "production_field",
+        "source_name": "Заполярное нефтегазоконденсатное месторождение",
+        "source_name_en": "Zapolyarnoe gas-condensate field",
+        "country": "RU",
+        "region": "YaNAO",
+        "operator": "Газпром добыча Ямбург",
+        "estimated_kt_per_year_ch4": null,
+        "decommissioned": false,
+        "coordinates_source": "researcher_manual_entry",
+        "coordinates_verified_date": "2026-04-26",
+        "data_license": "researcher_contributed_public_domain",
+        "estimate_source": "одно из крупнейших газовых месторождений РФ",
+        "notes": "Не найдено в OSM. Координата от исследователя (ИПНГ РАН). Тазовский район ЯНАО."
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [73.00, 61.50] },
+      "properties": {
+        "source_id": "ru_khmao_priobskoye",
+        "source_type": "oil_gas",
+        "source_subtype": "production_field",
+        "source_name": "Приобское нефтяное месторождение",
+        "source_name_en": "Priobskoye oil field",
+        "country": "RU",
+        "region": "KhMAO",
+        "operator": "Роснефть / Газпром нефть",
+        "estimated_kt_per_year_ch4": null,
+        "decommissioned": false,
+        "coordinates_source": "researcher_manual_entry",
+        "coordinates_verified_date": "2026-04-26",
+        "data_license": "researcher_contributed_public_domain",
+        "estimate_source": "крупнейшее нефтяное месторождение Сургутского региона",
+        "notes": "Не найдено в OSM. Координата от исследователя (ИПНГ РАН). Северная и южная части эксплуатируются разными операторами."
+      }
+    }
+  ]
+}

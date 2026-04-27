@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.0",
+  "description": "Central metadata for Reference Clean Zones used by RU-PlumeScan. Mirrors RNA.md v1.2 §11.3 ZONE_METADATA dict. Per-zone polygon geometry is stored in <zone_id>.geojson; this file holds the canonical attribute set used at ingestion time and pre-populates the Common Plume Schema reference fields. Modifications to the zone set or latitude bands require explicit DNA mutation per DNA.md v2.2 §2.3.",
+  "ingestion_date": "2026-04-26",
+  "zones": {
+    "yugansky": {
+      "zone_id": "yugansky",
+      "zone_name_ru": "Юганский заповедник",
+      "zone_name_en": "Yugansky Strict Nature Reserve",
+      "internal_buffer_km": 10,
+      "centroid_lat": 60.5,
+      "centroid_lon": 74.5,
+      "area_km2_total": 6500,
+      "natural_zone": "middle_taiga_with_wetlands",
+      "latitude_band_min": 58.0,
+      "latitude_band_max": 65.0,
+      "quality_status": "active",
+      "established_year": 1982,
+      "iucn_category": "Ia",
+      "official_url": "http://ugansky.ru"
+    },
+    "verkhnetazovsky": {
+      "zone_id": "verkhnetazovsky",
+      "zone_name_ru": "Верхне-Тазовский заповедник",
+      "zone_name_en": "Verkhne-Tazovsky Strict Nature Reserve",
+      "internal_buffer_km": 5,
+      "centroid_lat": 63.5,
+      "centroid_lon": 84.0,
+      "area_km2_total": 6313,
+      "natural_zone": "northern_taiga_permafrost",
+      "latitude_band_min": 62.0,
+      "latitude_band_max": 68.0,
+      "quality_status": "active",
+      "established_year": 1986,
+      "iucn_category": "Ia",
+      "official_url": "https://oopt.info/index.php?oopt=125"
+    },
+    "kuznetsky_alatau": {
+      "zone_id": "kuznetsky_alatau",
+      "zone_name_ru": "Кузнецкий Алатау заповедник",
+      "zone_name_en": "Kuznetsky Alatau Strict Nature Reserve",
+      "internal_buffer_km": 5,
+      "centroid_lat": 54.5,
+      "centroid_lon": 88.0,
+      "area_km2_total": 4019,
+      "natural_zone": "mountain_taiga",
+      "latitude_band_min": 53.0,
+      "latitude_band_max": 57.0,
+      "quality_status": "active",
+      "established_year": 1989,
+      "iucn_category": "Ia",
+      "official_url": "http://www.kuz-alatau.ru"
+    },
+    "altaisky": {
+      "zone_id": "altaisky",
+      "zone_name_ru": "Алтайский заповедник",
+      "zone_name_en": "Altaisky Strict Nature Reserve",
+      "internal_buffer_km": 5,
+      "centroid_lat": 51.5,
+      "centroid_lon": 88.5,
+      "area_km2_total": 8810,
+      "natural_zone": "high_mountain_with_alpine",
+      "latitude_band_min": 51.0,
+      "latitude_band_max": 54.0,
+      "quality_status": "optional_pending_quality",
+      "established_year": 1932,
+      "iucn_category": "Ia",
+      "official_url": "https://www.altzapovednik.ru"
+    }
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "type": "FeatureCollection",
+  "name": "additional_western_siberia",
+  "description": "Additional industrial sources of Western Siberia AOI not covered by kuzbass_mines / khmao_yamal_oil_gas / norilsk_complex: large gas-fired thermal power plants (TPPs/ГРЭС), refineries, etc. Selected facilities with confirmed OSM industrial polygons.",
+  "_metadata": {
+    "ingestion_date": "2026-04-27",
+    "compiler": "RU-PlumeScan P-00.1 v2 (CHANGE-0017)",
+    "verification_standard": "OSM (industrial=*, landuse=industrial). Cross-verified via OSM relation/way ID lookup.",
+    "license": "OSM-ODbL-1.0",
+    "data_attribution": "© OpenStreetMap contributors",
+    "note": "Дополняется автоматически через GPPD subset. Этот файл содержит только manually verified entries."
+  },
+  "crs": {
+    "type": "name",
+    "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [73.5078, 61.2798] },
+      "properties": {
+        "source_id": "ru_khmao_surgut_grs2",
+        "source_type": "power_plant",
+        "source_subtype": "tpp_gas",
+        "source_name": "Сургутская ГРЭС-2",
+        "source_name_en": "Surgut Power Plant 2",
+        "country": "RU",
+        "region": "KhMAO",
+        "operator": "Юнипро",
+        "fuel_primary": "Gas",
+        "capacity_mw": 5687,
+        "decommissioned": false,
+        "coordinates_source": "OSM-relation-3068916",
+        "coordinates_verified_date": "2026-04-27",
+        "data_license": "OSM-ODbL-1.0",
+        "data_attribution": "© OpenStreetMap contributors",
+        "notes": "Крупнейшая газовая ТЭС России (5687 МВт). Источник NO₂. Один из top-10 NO₂ point sources EurAsia."
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [73.4854, 61.2788] },
+      "properties": {
+        "source_id": "ru_khmao_surgut_grs1",
+        "source_type": "power_plant",
+        "source_subtype": "tpp_gas",
+        "source_name": "Сургутская ГРЭС-1",
+        "source_name_en": "Surgut Power Plant 1",
+        "country": "RU",
+        "region": "KhMAO",
+        "operator": "ОГК-2 (Газпром энергохолдинг)",
+        "fuel_primary": "Gas",
+        "capacity_mw": 3324,
+        "decommissioned": false,
+        "coordinates_source": "OSM-relation-3878554",
+        "coordinates_verified_date": "2026-04-27",
+        "data_license": "OSM-ODbL-1.0",
+        "data_attribution": "© OpenStreetMap contributors",
+        "notes": "Соседняя с ГРЭС-2 (расстояние ~1.2 км по UTM)."
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [76.9352, 60.9807] },
+      "properties": {
+        "source_id": "ru_khmao_nizhnevartovskaya_grs",
+        "source_type": "power_plant",
+        "source_subtype": "tpp_gas",
+        "source_name": "Нижневартовская ГРЭС",
+        "source_name_en": "Nizhnevartovsk Power Plant",
+        "country": "RU",
+        "region": "KhMAO",
+        "operator": "Интер РАО",
+        "fuel_primary": "Gas",
+        "capacity_mw": 2031,
+        "decommissioned": false,
+        "coordinates_source": "OSM-way-68522408",
+        "coordinates_verified_date": "2026-04-27",
+        "data_license": "OSM-ODbL-1.0",
+        "data_attribution": "© OpenStreetMap contributors",
+        "notes": "Газовая ТЭС у Самотлорского нефтяного поля. Соседнее с месторождением, близко к oil&gas инфраструктуре."
+      }
+    }
+  ]
+}
