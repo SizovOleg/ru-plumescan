@@ -1,22 +1,20 @@
-# RU-PlumeScan — RNA v1.1
+# RU-PlumeScan — RNA v1.2
 
-**Версия:** 1.1  
-**Дата:** 2026-04-25  
-**Статус:** Stack-specific operationalization of Algorithm v2.2  
-**Соответствие:** DNA v2.1, CLAUDE.md v1.0, Algorithm.md v2.2  
-**Замена:** RNA.md v1.0 (archived)
+**Версия:** 1.2  
+**Дата:** 2026-04-26  
+**Статус:** Stack-specific operationalization of Algorithm v2.3  
+**Соответствие:** DNA v2.2, CLAUDE.md v1.0, Algorithm.md v2.3  
+**Замена:** RNA.md v1.1 (archived)
 
-**Изменения v1.0 → v1.1:**
-- §7.1 default preset: `wind.source` изменён `ECMWF/ERA5_LAND/HOURLY` → `ECMWF/ERA5/HOURLY` (full reanalysis, не land-surface replay; per Schuit 2023, ERA5-Land не эквивалентен ERA5 для plume direction)
-- §7.1 default preset: `ime.u_eff_a` изменён `0.33` → `0.59`, `ime.u_eff_b` изменён `0.45` → `0.00` (Schuit 2023 TROPOMI 10m calibration вместо Varon 2018 GHGSat)
-- §7.1 default preset: `ime.u_eff_method` изменён `"varon2018_ghgsat"` → `"schuit2023_10m"`
-- §7.1 default preset: добавлены новые секции `so2_specific` и `no2_specific` с per-gas параметрами
-- §7.2 per-gas overrides: добавлены SO₂ specific params (fit_method, fitting_window auto-select)
-- §7.3 presets: `lauvaux_eq` заменён на `imeo_eq` (Lauvaux 2022 catalog не доступен публично)
-- §3.1 Asset structure: `RuPlumeScan/refs/lauvaux2022_v1` → `RuPlumeScan/refs/imeo_mars_<YYYY-MM>` (monthly snapshots)
-- §5 RCA: `Lauvaux2022Ingester` → `ImeoMarsIngester` (полная замена с CSV/GeoJSON download)
-- §10.3 NO₂ reproject: формулы emission rate уточнены (Beirle 2019 Sci. Adv.: `E = D + N/τ`, `L = NOx/NO₂ = 1.32`, `τ = 4h`)
-- §13.1 regression test: `lauvaux_eq` baseline заменён на `imeo_eq`
+**Изменения v1.1 → v1.2 (CHANGE-0017):**
+
+- §3.1 Asset structure: добавлены `RuPlumeScan/reference/` (protected_areas FeatureCollection + protected_areas_mask) и `RuPlumeScan/baselines/` (reference_<gas>_<period>, regional_<gas>_<period>)
+- §7.1 default preset: добавлены секции `reference_baseline` и `background.mode = "dual_baseline"`
+- §7.3 presets: добавлены `regional_only` и `reference_only` диагностические presets
+- §11 NEW: Python module `src/py/setup/build_protected_areas_mask.py` для ingestion заповедников
+- §11 NEW: JS module `src/js/modules/reference_baseline.js` для baseline construction
+- §13 SO₂ Python fit module остаётся с v1.1
+- §6.1 naming: добавлены reference baseline asset patterns
 
 ---
 
@@ -28,14 +26,15 @@
 - §4: GEE JavaScript module conventions
 - §5: Python RCA module conventions
 - §6: Naming conventions
-- §7: Default values для всех параметров Algorithm
+- §7: Default values
 - §8: Tile sizes, scales, projections
 - §9: Logging и reproducibility
 - §10: GEE-specific operational patterns
-- §11: Python-GEE integration patterns
-- §12: UI App структура
-- §13: Testing infrastructure
-- §14: Quotas и performance management
+- §11: **Reference Baseline Builder implementation** (новая секция в v1.2)
+- §12: Python-GEE integration patterns
+- §13: UI App структура
+- §14: Testing infrastructure
+- §15: Quotas и performance management
 
 ---
 
@@ -45,40 +44,35 @@
 
 | Компонент | Версия | Назначение |
 |---|---|---|
-| GEE JavaScript API | current (2026) | Detection Engine, Comparison Engine, UI App |
-| GEE Python API (`earthengine-api`) | ≥ 0.1.380 | RCA upload, batch operations, automation |
+| GEE JavaScript API | current (2026) | Detection Engine, Comparison Engine, Reference Baseline Builder, UI App |
+| GEE Python API | ≥ 0.1.380 | RCA upload, batch operations, automation, **protected areas ingestion** |
 | `geemap` | ≥ 0.32 | Python interactive layer |
-| Python | 3.10+ | RCA ingesters, analysis scripts, SO₂ plume fit |
-| Node.js | 18+ | dev tooling (linting, testing JS), не runtime |
+| Python | 3.10+ | RCA ingesters, SO₂ plume fit, **protected areas mask build** |
+| `geopandas` | ≥ 0.14 | Loading Russian zapovedniks polygons (новое в v1.2) |
+| Node.js | 18+ | dev tooling |
 
 ### 1.2. Среда выполнения по компоненту
 
-| Компонент | Где выполняется |
+| Компонент | Где |
 |---|---|
-| Detection Engine (CH₄/NO₂) | GEE Code Editor / GEE Batch tasks |
-| Detection Engine (SO₂ — coordinate rotation) | GEE Code Editor |
-| **SO₂ plume fit (full nonlinear)** | **Python (scipy.optimize) — JS не поддерживает nonlinear fit** |
-| Comparison Engine | GEE Code Editor / GEE Batch tasks |
-| UI App | `users/<account>/RuPlumeScan` published as GEE App |
-| RCA — CSV ingesters (Schuit) | Local Python → GEE Asset upload |
-| RCA — API ingesters (CAMS, IMEO MARS) | Local Python (cron) → GEE Asset upload |
-| Validation tests | GEE Code Editor (regression) + Python (synthetic injection) |
+| Detection Engine (CH₄/NO₂) | GEE Code Editor / Batch |
+| Detection Engine (SO₂ rotation) | GEE Code Editor |
+| SO₂ plume fit (full nonlinear) | Python (scipy.optimize) |
+| Comparison Engine | GEE Code Editor / Batch |
+| **Reference Baseline Builder** | **GEE Code Editor (per-zone climatology) + Python (Алтайский QA test)** |
+| **Protected areas ingestion** | **Python (load polygons from data/, upload as GEE Asset)** |
+| UI App | `users/<account>/RuPlumeScan` |
+| RCA — Schuit, IMEO MARS, CAMS | Local Python → GEE Asset |
+| Validation tests | GEE + Python |
 
 ### 1.3. Что НЕ в стеке
 
-- **AWS, Google Cloud Compute** — не используются. Все вычисления в GEE + локальный Python.
-- **GEOS-Chem, GEOS-FP моделирование** — не используется.
-- **GEOS-FP wind data** — недоступен в GEE. Используем только ERA5 (declared limitation).
-- **HARP / harpconvert** — не используется в v1.
-- **PyTorch, TensorFlow, sklearn** — запрещено в v1 (DNA §2.1, ML только в v2).
-- **Local L2 download** — не используется в v1.
-- **Docker / containers** — не используется. Python окружение — venv или conda.
+Без изменений с v1.1.
 
 ### 1.4. GEE проект
 
 - **Project ID:** `nodal-thunder-481307-u1`
 - **Asset root:** `projects/nodal-thunder-481307-u1/assets/RuPlumeScan/`
-- **App publishing:** `users/<account>/RuPlumeScan` (account TBD)
 
 ---
 
@@ -86,31 +80,37 @@
 
 ```
 ru-plumescan/
-├── DNA.md                          # v2.1
+├── DNA.md                          # v2.2
 ├── CLAUDE.md                       # v1.0
-├── Algorithm.md                    # v2.2
-├── RNA.md                          # этот файл (v1.1)
-├── Roadmap.md
+├── Algorithm.md                    # v2.3
+├── RNA.md                          # этот файл (v1.2)
+├── Roadmap.md                      # v1.1
 ├── OpenSpec.md
 ├── README.md
 ├── LICENSE
 ├── CITATION.cff
 │
 ├── DevPrompts/
-│   ├── P-00.0_repo_init.md
-│   ├── P-00.1_industrial_proxy.md
-│   ├── P-01.0_bg_climatology.md
+│   ├── P-00.0_repo_init.md          # done
+│   ├── P-00.1_industrial_and_reference_proxy.md   # CHANGED v1.1 → v1.2 (dual scope)
+│   ├── P-00.2_schema_validation.md
+│   ├── P-00.3_presets_storage.md
+│   ├── P-01.0a_reference_baseline.md     # NEW в v1.2
+│   ├── P-01.0b_regional_climatology.md   # CHANGED (was P-01.0)
+│   ├── P-01.1_kernels.md
+│   ├── P-01.2_dual_baseline_validation.md   # NEW в v1.2
 │   ├── P-02.0_detection_ch4.md
+│   ├── P-02.1_detection_ch4_ime.md
 │   ├── P-03.0_detection_no2.md
 │   ├── P-04.0_detection_so2.md
-│   ├── P-04.1_so2_python_fit.md      # NEW — Python wrapper for SO2 plume fit
+│   ├── P-04.1_so2_python_fit.md
 │   ├── P-05.0_rca_schuit.md
-│   ├── P-05.1_rca_imeo_mars.md       # CHANGED v1.0 (was rca_lauvaux)
+│   ├── P-05.1_rca_imeo_mars.md
 │   ├── P-05.2_rca_cams.md
 │   ├── P-06.0_comparison_engine.md
-│   ├── P-07.0_ui_app.md
-│   ├── P-08.0_validation_synthetic.md
-│   └── P-09.0_validation_regression.md
+│   ├── P-07.0..4_ui_app.md
+│   ├── P-08.0..4_validation.md
+│   └── P-09.0..1_release.md
 │
 ├── src/
 │   ├── js/
@@ -118,7 +118,8 @@ ru-plumescan/
 │   │   │   ├── config.js
 │   │   │   ├── presets.js
 │   │   │   ├── qa.js
-│   │   │   ├── background.js
+│   │   │   ├── background.js                  # major rework в v1.2
+│   │   │   ├── reference_baseline.js          # NEW в v1.2
 │   │   │   ├── kernels.js
 │   │   │   ├── detection_ch4.js
 │   │   │   ├── detection_no2.js
@@ -136,13 +137,7 @@ ru-plumescan/
 │   │   ├── batch_runner.js
 │   │   └── tests/
 │   │       ├── regression/
-│   │       │   ├── kuzbass_2022_09_20.js
-│   │       │   ├── norilsk_so2.js
-│   │       │   └── bovanenkovo_ch4.js
 │   │       └── unit/
-│   │           ├── test_kernels.js
-│   │           ├── test_background.js
-│   │           └── test_schema.js
 │   │
 │   └── py/
 │       ├── rca/
@@ -151,468 +146,212 @@ ru-plumescan/
 │       │   ├── base_ingester.py
 │       │   ├── ingesters/
 │       │   │   ├── schuit2023.py
-│       │   │   ├── imeo_mars.py        # CHANGED — replaces lauvaux2022.py
+│       │   │   ├── imeo_mars.py
 │       │   │   ├── cams_hotspot.py
-│       │   │   ├── carbon_mapper.py    # placeholder
-│       │   │   └── cherepanova2023.py  # placeholder
+│       │   │   ├── carbon_mapper.py        # placeholder
+│       │   │   └── cherepanova2023.py      # placeholder
 │       │   ├── upload_to_gee.py
 │       │   └── verify_ingestion.py
-│       ├── so2_fit/                    # NEW — Python wrapper for SO2 plume fit
+│       │
+│       ├── setup/                          # NEW в v1.2 (extended)
 │       │   ├── __init__.py
-│       │   ├── plume_models.py         # full_nonlinear + fioletov_simplified
-│       │   ├── fit_engine.py           # scipy.optimize wrappers
-│       │   └── gee_integration.py      # sample → fit → upload back
+│       │   ├── build_industrial_proxy.py   # P-00.1 industrial part
+│       │   ├── build_protected_areas_mask.py   # NEW в v1.2 (P-00.1 reference part)
+│       │   ├── build_industrial_mask.py
+│       │   ├── altaisky_qa_test.py         # NEW в v1.2 (Algorithm §11.4)
+│       │   └── init_gee_assets.py
+│       │
+│       ├── so2_fit/                        # existing с v1.1
+│       │   ├── __init__.py
+│       │   ├── plume_models.py
+│       │   ├── fit_engine.py
+│       │   └── gee_integration.py
+│       │
 │       ├── synthetic/
-│       │   ├── __init__.py
-│       │   ├── plume_injection.py
-│       │   └── recovery_test.py
 │       ├── analysis/
-│       │   ├── sensitivity_sweep.py
-│       │   └── catalog_export.py
-│       └── tests/
-│           ├── test_schuit_ingester.py
-│           ├── test_imeo_mars_ingester.py    # CHANGED
-│           ├── test_so2_fit.py               # NEW
-│           └── test_synthetic_injection.py
+│       ├── tests/
+│       │   ├── test_schuit_ingester.py
+│       │   ├── test_imeo_mars_ingester.py
+│       │   ├── test_so2_fit.py
+│       │   ├── test_protected_areas.py     # NEW в v1.2
+│       │   └── test_synthetic_injection.py
+│       ├── requirements.txt
+│       └── pyproject.toml
 │
 ├── docs/
 │   ├── usage.md
 │   ├── presets_guide.md
 │   ├── reference_ingestion_guide.md
-│   ├── developer_guide.md
+│   ├── reference_baseline_methodology.md   # NEW в v1.2
 │   └── publication_methods.md
 │
 ├── data/
-│   └── industrial_sources/
-│       ├── kuzbass_mines.geojson
-│       ├── khmao_yamal_oil_gas.geojson
-│       ├── norilsk_complex.geojson
-│       └── README.md
+│   ├── industrial_sources/
+│   │   ├── kuzbass_mines.geojson
+│   │   ├── khmao_yamal_oil_gas.geojson
+│   │   ├── norilsk_complex.geojson
+│   │   └── README.md
+│   │
+│   └── protected_areas/                    # NEW в v1.2
+│       ├── yugansky.geojson                # 60.5°N, 74.5°E, 6500 km²
+│       ├── verkhnetazovsky.geojson         # 63.5°N, 84.0°E, 6313 km²
+│       ├── kuznetsky_alatau.geojson        # 54.5°N, 88.0°E, 4019 km²
+│       ├── altaisky.geojson                # 51.5°N, 88.5°E, 8810 km² (optional)
+│       ├── metadata.json                   # zone configs (internal_buffer_km, latitude_band, etc.)
+│       └── README.md                        # source attribution + license info
 │
-└── .github/
-    └── workflows/
-        ├── lint.yml
-        └── test.yml
+└── .github/workflows/
+    ├── lint.yml
+    └── test.yml
 ```
-
-### 2.1. Justification для разделения JS / Python
-
-- **JS** — всё что выполняется в GEE: detection (CH₄, NO₂, SO₂ rotation), comparison, UI.
-- **Python** — четыре use cases:
-  1. RCA: ingest reference catalogs (CSV/API → GEE Asset)
-  2. **SO₂ full nonlinear plume fit** (scipy.optimize не доступен в GEE JS)
-  3. Synthetic plume generation для validation
-  4. Sensitivity sweep automation (запуск множественных JS Runs через Python API)
 
 ---
 
 ## 3. GEE Asset structure
 
-### 3.1. Полная иерархия
+### 3.1. Полная иерархия (extended in v1.2)
 
 ```
 projects/nodal-thunder-481307-u1/assets/RuPlumeScan/
 │
-├── backgrounds/
+├── backgrounds/                       # legacy V1 archived в _legacy_v1_archive/
 │   ├── CH4/
-│   │   └── climatology_2019_2025      # Image, monthly bands + sigma + count
 │   ├── NO2/
-│   │   └── climatology_2019_2025
 │   └── SO2/
-│       └── climatology_2019_2025
 │
 ├── industrial/
-│   ├── proxy_mask                     # Image (raster, 1=industrial, 0=clean)
-│   └── source_points                  # FeatureCollection
-│                                       # properties включают: source_id, source_type,
-│                                       #   source_name, country, region,
-│                                       #   estimated_kt_per_year (для SO2 fitting window)
+│   ├── proxy_mask                     # Image (1=industrial buffered, 0=clean)
+│   └── source_points                  # FeatureCollection (manual + GPPD + VIIRS proxy)
+│
+├── reference/                         # NEW в v1.2
+│   ├── protected_areas                # FeatureCollection (4 zone polygons + metadata)
+│   │                                   # properties: zone_id, zone_name_ru, internal_buffer_km,
+│   │                                   #   centroid_lat, centroid_lon, area_km2_total, area_km2_useable,
+│   │                                   #   natural_zone, latitude_band_min, latitude_band_max,
+│   │                                   #   quality_status, established_year, iucn_category, official_url
+│   └── protected_areas_mask           # Image (1 inside any zone, 0 outside)
+│
+├── baselines/                         # NEW в v1.2
+│   ├── reference_CH4_2019_2025        # Image (per-month bands × 12)
+│   │                                   # bands: ref_M01, ..., ref_M12, sigma_M01, ..., 
+│   │                                   #        count_M01, ..., zone_id_M01, ...
+│   ├── reference_NO2_2019_2025        # placeholder for v2 future
+│   ├── reference_SO2_2019_2025        # placeholder for v2 future
+│   ├── regional_CH4_2019_2025         # Image (existing с industrial buffer exclusion)
+│   ├── regional_NO2_2019_2025
+│   └── regional_SO2_2019_2025
 │
 ├── catalog/
 │   ├── CH4/
-│   │   ├── default_2021                # FeatureCollection (Plume Events)
-│   │   ├── default_2022
+│   │   ├── default_2021               # уже с algorithm_version=2.3
 │   │   ├── schuit_eq_2021
-│   │   ├── imeo_eq_2021                # CHANGED (was lauvaux_eq)
+│   │   ├── imeo_eq_2021
+│   │   ├── regional_only_2021         # diagnostic preset
+│   │   ├── reference_only_2021        # diagnostic preset
 │   │   ├── sensitive_2022
 │   │   └── custom_<sha8>_2022
 │   ├── NO2/
-│   │   └── default_2022                # multi-month aggregate
 │   └── SO2/
-│       └── default_2022
 │
-├── refs/                               # Reference catalogs in Common Plume Schema
-│   ├── schuit2023_v1                   # FeatureCollection (2974 plumes 2021)
-│   ├── imeo_mars_2026-04                # CHANGED — monthly snapshot (was lauvaux2022)
-│   ├── imeo_mars_2026-05                # next monthly snapshot
-│   ├── cams_2026-04-25                 # weekly snapshot
-│   ├── cams_2026-05-02
+├── refs/
+│   ├── schuit2023_v1
+│   ├── imeo_mars_2026-04
+│   ├── cams_2026-04-25
 │   └── ...
 │
 ├── comparisons/
 │   ├── ours_vs_schuit2023/
-│   │   ├── default_2021_<date>
-│   │   │   ├── matched_events
-│   │   │   ├── unmatched_a
-│   │   │   ├── unmatched_b
-│   │   │   ├── metrics
-│   │   │   └── disagreement_density
-│   │   └── ...
-│   ├── ours_vs_imeo_mars/              # CHANGED
-│   ├── ours_vs_cams/
-│   └── cross_source_agreement_2021     # per-event agreement_score
+│   ├── ours_vs_imeo_mars/
+│   └── cross_source_agreement_2021
 │
 ├── presets/
 │   ├── built_in/
-│   │   ├── default_v2.2
-│   │   ├── schuit_eq_v2.2
-│   │   ├── imeo_eq_v2.2                # CHANGED (was lauvaux_eq)
-│   │   ├── sensitive_v2.2
-│   │   └── conservative_v2.2
+│   │   ├── default_v2.3
+│   │   ├── schuit_eq_v2.3
+│   │   ├── imeo_eq_v2.3
+│   │   ├── sensitive_v2.3
+│   │   ├── conservative_v2.3
+│   │   ├── regional_only_v2.3        # diagnostic
+│   │   └── reference_only_v2.3       # diagnostic
 │   └── custom/
-│       └── custom_<sha8>...
 │
-├── runs/                               # Run lifecycle logs
-│   └── <run_id>
-│
+├── runs/
 └── validation/
     ├── synthetic_injection/
-    │   └── recovery_results_<date>
-    └── regression/
-        └── baseline_<date>
+    ├── regression/
+    └── altaisky_qa/                   # NEW в v1.2 — результаты QA test
+        └── test_<date>                # Feature with pass/fail + metrics
 ```
 
 ### 3.2. Asset access permissions
 
-- **Public read** для всех под `RuPlumeScan/` после v1.0 release
-- **Write** только владелец GEE проекта
-- При публикации в Zenodo — экспорт catalog FeatureCollections в GeoJSON
+Без изменений с v1.1.
 
 ### 3.3. Asset versioning
 
-При обновлении Algorithm version (2.1 → 2.2):
-- Новые runs пишутся в `RuPlumeScan/catalog/<gas>/<config>_v2.2_<period>`
-- Старые runs остаются как `RuPlumeScan/catalog/<gas>/<config>_v2.1_<period>` (immutable)
+При обновлении Algorithm version (2.2 → 2.3):
+- Новые runs пишутся в `RuPlumeScan/catalog/<gas>/<config>_v2.3_<period>`
+- Старые runs остаются как `RuPlumeScan/catalog/<gas>/<config>_v2.2_<period>` (immutable)
 
-При обновлении Reference Catalog:
-- IMEO MARS — monthly snapshot: `RuPlumeScan/refs/imeo_mars_<YYYY-MM>`
-- CAMS — weekly snapshot: `RuPlumeScan/refs/cams_<YYYY-MM-DD>`
-- Старые snapshots не удаляются (для reproducibility прошлых comparisons)
+При обновлении reference zones (новый zone, обновлённые boundaries):
+- Versioned: `RuPlumeScan/reference/protected_areas_v1`, `_v2`, ...
+- При active version change — full DNA mutation (DNA §2.3)
+
+При обновлении reference baseline (новый target_year):
+- Versioned: `RuPlumeScan/baselines/reference_CH4_2019_2025`, `_2019_2026` после end of 2026
+- Backwards compatibility: старые baselines не удаляются
 
 ---
 
 ## 4. GEE JavaScript module conventions
 
-### 4.1. Module structure
-
-См. v1.0 §4.1, без изменений. Каждый модуль — отдельный `.js` файл, экспортирующий объект через `exports`. JSDoc обязательны. Factory pattern для closures в `.map()`.
-
-### 4.2. Modules import path
-
-```javascript
-var bg = require('users/<account>/RuPlumeScan:modules/background');
-var detection_ch4 = require('users/<account>/RuPlumeScan:modules/detection_ch4');
-```
-
-### 4.3. Coding standards
-
-- No ES6 classes для GEE modules
-- Factory pattern для closures
-- JSDoc обязательно
-- No global state
-- Server-side only в hot paths
-- Explicit `ee.Number()` / `ee.String()` casts
-
-### 4.4. Error handling
-
-GEE не имеет try/catch на server-side. Defensive coding через `ee.Algorithms.If()`.
-
-### 4.5. Linting
-
-- ESLint config: `airbnb-base`
-- Pre-commit hook: lint + JSDoc presence check
-- CI на PR
+Без изменений с v1.1.
 
 ---
 
 ## 5. Python RCA module conventions
 
-### 5.1. BaseIngester abstract class
-
-```python
-# src/py/rca/base_ingester.py
-
-from abc import ABC, abstractmethod
-from typing import Optional
-import pandas as pd
-
-class BaseIngester(ABC):
-    SOURCE_NAME: str
-    DECLARED_STATS: dict
-    
-    @abstractmethod
-    def fetch(self) -> pd.DataFrame:
-        """Fetch raw data from source."""
-        pass
-    
-    @abstractmethod
-    def validate(self, raw: pd.DataFrame) -> dict:
-        """Verify against DECLARED_STATS. Raise ValidationError if discrepancy > 5%."""
-        pass
-    
-    @abstractmethod
-    def to_common_schema(self, raw: pd.DataFrame) -> pd.DataFrame:
-        """Convert to Common Plume Schema."""
-        pass
-    
-    def ingest(self, asset_id: str) -> str:
-        raw = self.fetch()
-        validation = self.validate(raw)
-        common = self.to_common_schema(raw)
-        return self.upload_to_gee(common, asset_id)
-    
-    def upload_to_gee(self, common: pd.DataFrame, asset_id: str) -> str:
-        from .upload_to_gee import dataframe_to_gee_asset
-        return dataframe_to_gee_asset(common, asset_id, source=self.SOURCE_NAME)
-```
-
-### 5.2. Schuit2023 ingester (CSV from Zenodo)
-
-```python
-# src/py/rca/ingesters/schuit2023.py
-
-import pandas as pd
-import requests
-from datetime import date
-from ..base_ingester import BaseIngester
-
-class Schuit2023Ingester(BaseIngester):
-    SOURCE_NAME = "schuit2023"
-    DECLARED_STATS = {
-        "n_events": 2974,
-        "time_range": (date(2021, 1, 1), date(2021, 12, 31)),
-        "doi": "10.5281/zenodo.8087134",
-        "paper_doi": "10.5194/acp-23-9071-2023"
-    }
-    ZENODO_URL = "https://zenodo.org/records/8087134/files/all_plumes_2021.csv"
-    
-    def fetch(self) -> pd.DataFrame:
-        response = requests.get(self.ZENODO_URL)
-        response.raise_for_status()
-        from io import StringIO
-        return pd.read_csv(StringIO(response.text))
-    
-    def validate(self, raw: pd.DataFrame) -> dict:
-        n_actual = len(raw)
-        n_expected = self.DECLARED_STATS["n_events"]
-        deviation = abs(n_actual - n_expected) / n_expected
-        if deviation > 0.05:
-            raise ValueError(f"Schuit2023: deviation {deviation:.1%} > 5%")
-        return {"n_actual": n_actual, "deviation": deviation}
-    
-    def to_common_schema(self, raw: pd.DataFrame) -> pd.DataFrame:
-        common = pd.DataFrame()
-        common['event_id'] = raw.apply(
-            lambda r: f"schuit2023_CH4_{r['date'].replace('-','')}_{r['lat']:.4f}_{r['lon']:.4f}",
-            axis=1
-        )
-        common['source_catalog'] = "schuit2023"
-        common['source_event_id'] = raw.index.astype(str)
-        common['schema_version'] = "1.0"
-        common['ingestion_date'] = pd.Timestamp.utcnow().date()
-        common['gas'] = "CH4"
-        common['date_utc'] = pd.to_datetime(raw['date'])
-        common['time_utc'] = raw['time_UTC']
-        common['lat'] = raw['lat']
-        common['lon'] = raw['lon']
-        common['magnitude_proxy'] = raw['source_rate_t/h']
-        common['magnitude_proxy_unit'] = "t/h"
-        common['nearest_source_type'] = raw['estimated_source_type']
-        common['quality_flag'] = "ml_classified"
-        return common
-```
-
-### 5.3. ImeoMars ingester (CHANGED in v1.1 — replaces Lauvaux2022)
-
-```python
-# src/py/rca/ingesters/imeo_mars.py
-
-import pandas as pd
-import requests
-from datetime import date
-from ..base_ingester import BaseIngester
-
-class ImeoMarsIngester(BaseIngester):
-    """
-    UNEP IMEO MARS / Eye on Methane data ingester.
-    
-    Replaces Lauvaux2022Ingester (per-event catalog не доступен публично, 
-    only PDF supplement). IMEO MARS provides richer fields, monthly updates, 
-    open license CC-BY-NC-SA 4.0.
-    
-    URL: methanedata.unep.org
-    """
-    SOURCE_NAME = "imeo_mars"
-    DECLARED_STATS = {
-        # IMEO MARS обновляется monthly, точное число events не constant
-        "min_events_expected": 100,        # baseline sanity check
-        "license": "CC-BY-NC-SA-4.0",
-        "attribution_required": "UNEP IMEO"
-    }
-    
-    PLUMES_CSV_URL = "https://methanedata.unep.org/api/plumes_export.csv"
-    SOURCES_CSV_URL = "https://methanedata.unep.org/api/sources_export.csv"
-    
-    def fetch(self) -> pd.DataFrame:
-        """Fetch both plumes and sources."""
-        plumes_resp = requests.get(self.PLUMES_CSV_URL)
-        plumes_resp.raise_for_status()
-        from io import StringIO
-        plumes = pd.read_csv(StringIO(plumes_resp.text))
-        return plumes
-    
-    def validate(self, raw: pd.DataFrame) -> dict:
-        n_actual = len(raw)
-        if n_actual < self.DECLARED_STATS["min_events_expected"]:
-            raise ValueError(
-                f"IMEO MARS: only {n_actual} events fetched, "
-                f"expected ≥ {self.DECLARED_STATS['min_events_expected']}. "
-                f"Check API availability."
-            )
-        
-        # Verify required fields present
-        required = ['id_plume', 'lat', 'lon', 'tile_date', 'ch4_fluxrate', 
-                   'wind_u', 'wind_v', 'sector', 'country']
-        missing = [c for c in required if c not in raw.columns]
-        if missing:
-            raise ValueError(f"IMEO MARS: missing fields {missing}")
-        
-        return {"n_actual": n_actual, "fields_validated": True}
-    
-    def to_common_schema(self, raw: pd.DataFrame) -> pd.DataFrame:
-        common = pd.DataFrame()
-        common['event_id'] = raw.apply(
-            lambda r: f"imeo_mars_CH4_{pd.to_datetime(r['tile_date']).strftime('%Y%m%d')}_{r['lat']:.4f}_{r['lon']:.4f}",
-            axis=1
-        )
-        common['source_catalog'] = "imeo_mars"
-        common['source_event_id'] = raw['id_plume'].astype(str)
-        common['schema_version'] = "1.0"
-        common['ingestion_date'] = pd.Timestamp.utcnow().date()
-        common['gas'] = "CH4"
-        common['date_utc'] = pd.to_datetime(raw['tile_date'])
-        common['lat'] = raw['lat']
-        common['lon'] = raw['lon']
-        common['magnitude_proxy'] = raw['ch4_fluxrate']
-        common['magnitude_proxy_unit'] = "t/h"
-        common['nearest_source_type'] = raw['sector']
-        common['wind_u'] = raw['wind_u']
-        common['wind_v'] = raw['wind_v']
-        common['quality_flag'] = raw['actionable'].apply(
-            lambda x: "actionable" if x else "informational"
-        )
-        # Custom IMEO fields (kept for downstream analysis)
-        common['_imeo_persistency'] = None  # filled from sources join
-        common['_imeo_notified'] = raw['notified']
-        common['_imeo_detection_institution'] = raw['detection_institution']
-        return common
-```
-
-**Note:** точные API endpoint URLs могут отличаться. При реализации DevPrompt P-05.1 — проверить актуальные URLs на methanedata.unep.org.
-
-### 5.4. CAMS Hotspot ingester (CSV download)
-
-```python
-# src/py/rca/ingesters/cams_hotspot.py
-
-class CamsHotspotIngester(BaseIngester):
-    SOURCE_NAME = "cams_hotspot"
-    DECLARED_STATS = {
-        "min_events_since_2024_05": 50,
-        "license": "Copernicus attribution required"
-    }
-    CSV_URL = "https://atmosphere.copernicus.eu/methane-plumes-export.csv"
-    
-    # Implementation similar to ImeoMars; CSV fields:
-    # date, time_UTC, lat, lon, source_rate_t/h, uncertainty_t/h, source_type, source_country
-```
-
-### 5.5. CSV → GEE Asset upload
-
-```python
-# src/py/rca/upload_to_gee.py
-
-import ee
-import pandas as pd
-
-def dataframe_to_gee_asset(df: pd.DataFrame, asset_id: str, source: str) -> ee.batch.Task:
-    """Upload DataFrame as GEE FeatureCollection Asset."""
-    ee.Initialize()
-    
-    features = []
-    for _, row in df.iterrows():
-        geom = ee.Geometry.Point([float(row['lon']), float(row['lat'])])
-        props = {
-            k: (None if pd.isna(v) else 
-                v.isoformat() if isinstance(v, pd.Timestamp) else
-                str(v) if not isinstance(v, (int, float, bool)) else v)
-            for k, v in row.items() 
-            if k not in ['lat', 'lon', 'geometry']
-        }
-        features.append(ee.Feature(geom, props))
-    
-    fc = ee.FeatureCollection(features)
-    
-    task = ee.batch.Export.table.toAsset(
-        collection=fc,
-        description=f"upload_{source}_{pd.Timestamp.utcnow().strftime('%Y%m%d')}",
-        assetId=asset_id
-    )
-    task.start()
-    return task
-```
-
-### 5.6. Python coding standards
-
-- PEP 8 strict
-- Type hints для public functions
-- Docstrings в NumPy style
-- pytest для всех ingesters с mock-данными
-
-`requirements.txt`:
-```
-earthengine-api>=0.1.380
-geemap>=0.32
-pandas>=2.0
-requests>=2.30
-shapely>=2.0
-pyproj>=3.6
-scipy>=1.11        # для SO2 nonlinear fit
-numpy>=1.24
-```
+Без изменений с v1.1.
 
 ---
 
-## 6. Naming conventions
+## 6. Naming conventions (extended in v1.2)
 
-См. v1.0 §6, без изменений кроме:
+### 6.1. GEE Assets
 
-- Reference catalog assets: `RuPlumeScan/refs/imeo_mars_<YYYY-MM>` (не `lauvaux2022_v1`)
-- Comparison reports: `RuPlumeScan/comparisons/ours_vs_imeo_mars/...`
-- Presets: `imeo_eq` вместо `lauvaux_eq`
+```
+RuPlumeScan/<module>/<gas>/<config_id>_<period>
+```
+
+**Reference zones и baselines (НОВОЕ в v1.2):**
+- `RuPlumeScan/reference/protected_areas` — FeatureCollection (single, not per-gas)
+- `RuPlumeScan/reference/protected_areas_mask` — Image (single)
+- `RuPlumeScan/baselines/reference_<GAS>_<YYYY>_<YYYY>` — per-gas reference baseline
+- `RuPlumeScan/baselines/regional_<GAS>_<YYYY>_<YYYY>` — per-gas regional climatology
+- `RuPlumeScan/validation/altaisky_qa/test_<YYYYMMDD>` — Feature with QA test results
+
+**Reference zone IDs (used in metadata, не в asset paths):**
+- `yugansky` — Юганский заповедник
+- `verkhnetazovsky` — Верхнетазовский заповедник
+- `kuznetsky_alatau` — Кузнецкий Алатау заповедник
+- `altaisky` — Алтайский заповедник (optional)
+
+snake_case, ASCII-only, не русский в asset paths.
+
+### 6.2-6.7. Без изменений с v1.1
 
 ---
 
 ## 7. Default values для всех параметров Algorithm
 
-### 7.1. Configuration `default` preset (full, обновлённый в v1.1)
+### 7.1. Configuration `default` preset (extended in v1.2)
 
 ```javascript
 // src/js/modules/presets.js
 
 exports.DEFAULT_PRESET = {
   config_id: "default",
-  algorithm_version: "2.2",
+  algorithm_version: "2.3",
   
   qa: {
     qa_value_min: 0.5,
@@ -629,9 +368,14 @@ exports.DEFAULT_PRESET = {
     snow_mask_threshold: 40
   },
   
+  // CHANGED в v1.2: dual baseline mode
   background: {
-    mode: "hybrid_climatology",
-    climatology: {
+    mode: "dual_baseline",                    // "dual_baseline" | "regional_only" | "reference_only"
+    primary: "reference",                      // primary baseline source когда consistent
+    consistency_tolerance_ppb: 30,             // |reg - ref| < tolerance → consistent
+    
+    regional: {
+      enabled: true,
       history_years_min: 2019,
       history_years_max_offset: -1,
       doy_window_half_days: 30,
@@ -645,6 +389,16 @@ exports.DEFAULT_PRESET = {
     lambda_climatology: 0.5,
     robust_sigma_method: "MAD",
     sigma_floor_units: 15
+  },
+  
+  // NEW в v1.2
+  reference_baseline: {
+    enabled: true,
+    use_zones: ["yugansky", "verkhnetazovsky", "kuznetsky_alatau"],
+    use_altaisky_if_quality_passed: true,
+    altaisky_quality_threshold_ppb: 30,
+    stratification: "by_latitude",
+    asset_path_template: "RuPlumeScan/baselines/reference_{gas}_{years}"
   },
   
   anomaly: {
@@ -662,7 +416,6 @@ exports.DEFAULT_PRESET = {
     max_size: 256
   },
   
-  // CHANGED v1.0 → v1.1: ERA5_LAND → ERA5 (full reanalysis, not land-surface replay)
   wind: {
     source: "ECMWF/ERA5/HOURLY",
     u_band: "u_component_of_wind_10m",
@@ -671,27 +424,31 @@ exports.DEFAULT_PRESET = {
     max_speed_m_s: 12.0,
     alignment_max_deg: 45,
     ambiguous_speed_threshold_m_s: 1.5,
-    grid_native_m: 31000           // ERA5 native (~31 km)
+    grid_native_m: 31000
   },
   
   source_attribution: {
     industrial_buffer_km: 30,
     max_attribution_distance_km: 30,
-    sources_asset: "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/industrial/source_points"
+    sources_asset: "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/industrial/source_points",
+    reference_zones_asset: "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/reference/protected_areas"
   },
   
+  // CHANGED в v1.2: добавлен weight для consistency
   confidence: {
     high_z: 4.0,
     high_n_pixels: 4,
     high_alignment: 0.7,
     high_distance_km: 20,
     weights: {
-      stat: 0.30,
+      stat: 0.25,           // was 0.30
       geom: 0.20,
-      wind: 0.25,
+      wind: 0.20,           // was 0.25
       coverage: 0.15,
+      consistency: 0.10,    // NEW в v1.2 (baseline_consistency_flag bonus)
       multi: 0.10
     },
+    inside_reference_zone_penalty: 0.3,    // NEW в v1.2: multiplier when matched_inside_reference_zone
     discretization: {
       very_high: 0.85,
       high: 0.65,
@@ -704,7 +461,6 @@ exports.DEFAULT_PRESET = {
     alignment_threshold: 0.3
   },
   
-  // CHANGED v1.0 → v1.1: Schuit 2023 TROPOMI 10m calibration вместо Varon 2018 GHGSat
   ime: {
     enabled: false,
     u_eff_method: "schuit2023_10m",
@@ -714,23 +470,20 @@ exports.DEFAULT_PRESET = {
     min_n_pixels_for_ime: 4
   },
   
-  // NEW в v1.1
   no2_specific: {
-    tau_hours: 4.0,                    // Beirle 2019 Sci. Adv.
-    no2_to_nox_ratio: 1.32,             // L = NOx/NO2 (Beirle 2019)
+    tau_hours: 4.0,
+    no2_to_nox_ratio: 1.32,
     period_min_months: 1,
     period_recommended_months: 3,
     min_observations_per_pixel: 25,
     min_wind_speed_m_s: 2.0,
-    pixel_wise_L: false                 // future: Beirle 2021 ESSD steady state
+    pixel_wise_L: false
   },
   
-  // NEW в v1.1
   so2_specific: {
-    fit_method: "full_nonlinear",       // primary: 3-param fit (A, sigma_y, L)
-                                         // fallback: "fioletov_simplified"
+    fit_method: "full_nonlinear",
     fitting_window_km: 50,
-    fitting_window_auto_select: true,   // 30/50/90 km для <100/100-1000/>1000 kt/yr
+    fitting_window_auto_select: true,
     buffer_km: 150,
     fixed_sigma_km_simplified: 15,
     fixed_tau_hours_simplified: 6.0
@@ -751,136 +504,47 @@ exports.DEFAULT_PRESET = {
 
 ### 7.2. Per-gas overrides
 
-```javascript
-exports.GAS_OVERRIDES = {
-  CH4: {
-    qa: {
-      qa_value_min: 0.5,
-      uncertainty_max_ppb: 15,
-      aod_max: 0.5,
-      physical_range_min_ppb: 1700,
-      physical_range_max_ppb: 2200
-    },
-    anomaly: {
-      delta_min_units: 30,
-      relative_threshold_min_units: 15
-    },
-    background: {
-      sigma_floor_units: 15
-    },
-    ime: {
-      enabled: false                    // opt-in для CH4 only
-    }
-  },
-  
-  NO2: {
-    qa: {
-      qa_value_min: 0.75,                // строже Schuit
-      cloud_fraction_max: 0.3
-    },
-    anomaly: {
-      delta_min_units: 0.00002,         // 20 µmol/m² в mol/m²
-      relative_threshold_min_units: 0.00001,
-      percentile_min: 0.95
-    },
-    background: {
-      sigma_floor_units: 0.000001       // 1 µmol/m²
-    },
-    object: {
-      min_pixels: 4,
-      min_area_km2: 100
-    },
-    detection_method: "beirle_divergence"
-  },
-  
-  SO2: {
-    qa: {
-      qa_value_min: 0.5,
-      cloud_fraction_max: 0.3,
-      so2_negative_floor_mol_m2: -0.001
-    },
-    anomaly: {
-      delta_min_units: 0.0001,
-      relative_threshold_min_units: 0.00005,
-      percentile_min: 0.98
-    },
-    background: {
-      sigma_floor_units: 0.00001
-    },
-    object: {
-      min_pixels: 4,
-      min_area_km2: 100
-    },
-    detection_method: "fioletov_rotation",
-    requires_known_source: true
-    // SO2-specific параметры в config.so2_specific (см. §7.1)
-  }
-};
-```
+Без изменений с v1.1.
 
 ### 7.3. Preset modifications
 
-#### `schuit_eq` — близко к Schuit 2023 production thresholds
+#### Existing presets (`schuit_eq`, `imeo_eq`, `sensitive`, `conservative`)
+
+Все наследуют `default` background и `reference_baseline` settings (dual_baseline mode), но различаются в detection thresholds. См. v1.1 §7.3 + Algorithm §8.
+
+#### NEW в v1.2: `regional_only` (diagnostic)
 
 ```javascript
-schuit_eq: deepMerge(DEFAULT_PRESET, {
-  config_id: "schuit_eq",
-  anomaly: {
-    delta_min_units: 50,
-    relative_threshold_min_units: 20,
-    percentile_min: 0.97
+regional_only: deepMerge(DEFAULT_PRESET, {
+  config_id: "regional_only",
+  background: { 
+    mode: "regional_only",
+    primary: "regional"
   },
-  object: { min_pixels: 4, min_area_km2: 100 },
-  background: { lambda_climatology: 0.6 }
-})
+  reference_baseline: { 
+    enabled: false 
+  }
+});
 ```
 
-#### `imeo_eq` — близко к UNEP IMEO MARS detection threshold (CHANGED v1.0 → v1.1)
+Назначение: диагностика. Что было бы если только industrial buffer без reference. Use case: понять value of reference baseline approach.
+
+#### NEW в v1.2: `reference_only` (diagnostic)
 
 ```javascript
-imeo_eq: deepMerge(DEFAULT_PRESET, {
-  config_id: "imeo_eq",
-  anomaly: {
-    delta_min_units: 60,
-    relative_threshold_min_units: 25,
-    percentile_min: 0.98
+reference_only: deepMerge(DEFAULT_PRESET, {
+  config_id: "reference_only",
+  background: { 
+    mode: "reference_only",
+    primary: "reference"
   },
-  object: { min_pixels: 5, min_area_km2: 150 },
-  wind: { min_speed_m_s: 3.0, alignment_max_deg: 30 }
-})
+  reference_baseline: { 
+    enabled: true 
+  }
+});
 ```
 
-#### `sensitive` — низкие пороги для discovery
-
-```javascript
-sensitive: deepMerge(DEFAULT_PRESET, {
-  config_id: "sensitive",
-  anomaly: {
-    z_min: 2.5,
-    delta_min_units: 20,
-    relative_threshold_min_units: 10,
-    percentile_min: 0.90
-  },
-  object: { min_pixels: 2, min_area_km2: 30 },
-  wind: { min_speed_m_s: 1.5, alignment_max_deg: 60 }
-})
-```
-
-#### `conservative` — высокие пороги, only reliable
-
-```javascript
-conservative: deepMerge(DEFAULT_PRESET, {
-  config_id: "conservative",
-  anomaly: {
-    z_min: 4.0,
-    delta_min_units: 80,
-    relative_threshold_min_units: 30,
-    percentile_min: 0.99
-  },
-  object: { min_pixels: 6, min_area_km2: 200 },
-  wind: { min_speed_m_s: 3.0, alignment_max_deg: 30 }
-})
-```
+Назначение: pure reference approach. Use case: characterize reference baseline alone, без regional cross-check.
 
 ---
 
@@ -888,297 +552,756 @@ conservative: deepMerge(DEFAULT_PRESET, {
 
 ### 8.1. Default scales
 
-См. v1.0 §8.1, без изменений. Все статистические reductions на scale ≥ 7000 m.
+См. v1.1 §8.1, без изменений. Все статистические reductions на scale ≥ 7000 m.
 
 ### 8.2. Projections
 
-| Operation | Projection | Why |
-|---|---|---|
-| QA, masking | EPSG:4326 | Default GEE |
-| Detection (CH₄) | EPSG:4326 | Anomaly is scalar |
-| **NO₂ divergence** | **EPSG:32642 (UTM 42N)** | **Critical: метрические dx/dy** |
-| **SO₂ rotation** | **EPSG:32642 + rotation** | Rotated frame |
-| Vector outputs | EPSG:4326 | Standard для GeoJSON |
-
-**ERA5 grid native: 31 km** (был ERA5-Land 11 km в v1.0). При sampling wind на feature centroid использовать `scale: 31000`.
+Без изменений с v1.1.
 
 ### 8.3. AOI definition
 
-См. v1.0 §8.3, без изменений.
+Без изменений с v1.1.
+
+**NEW в v1.2: Reference zone polygon coordinates** хранятся в WGS84 (EPSG:4326) в GeoJSON files. При reference baseline build — clip TROPOMI к zone geometry в EPSG:4326, scale 7000m.
 
 ---
 
 ## 9. Logging и reproducibility
 
-См. v1.0 §9, без изменений. Run lifecycle log, Asset metadata с params_hash, bit-identical reproducibility test, params_hash через deterministic checksum.
+Без изменений с v1.1, плюс:
+
+**Reference baseline runs логируются отдельно** в `RuPlumeScan/runs/baseline_<gas>_<period>_<run_id>` с metadata:
+- `zones_used`: list of zone_ids included
+- `altaisky_quality_passed`: bool/null
+- `altaisky_qa_test_metrics`: dict with diff values
+- `pixels_per_zone`: count valid pixels per zone
+- `aggregation_method`: "by_latitude_nearest"
 
 ---
 
 ## 10. GEE-specific operational patterns
 
-### 10.1. Annulus kernel implementation
+### 10.1-10.9. Без изменений с v1.1.
 
-См. v1.0 §10.1, без изменений.
+### 10.10. Negative buffer для protected areas (NEW в v1.2)
 
-### 10.2. Snow mask attachment
-
-См. v1.0 §10.2, без изменений.
-
-### 10.3. Reproject pattern для NO₂ divergence (UPDATED in v1.1)
+При apply internal buffer (`buffer(-internal_buffer_km * 1000)`) к polygon, есть risk создать invalid geometry если polygon имеет complex coastlines. Pre-simplify полигон:
 
 ```javascript
-// src/js/modules/detection_no2.js
+function applyInternalBufferSafe(geometry, buffer_km) {
+  // Simplify geometry first (tolerance 100m)
+  const simplified = geometry.simplify({maxError: 100});
+  
+  // Apply negative buffer
+  const buffered = simplified.buffer(-buffer_km * 1000);
+  
+  // Validate result is non-empty
+  return ee.Algorithms.If(
+    buffered.area().gt(1e6),  // > 1 km² minimum
+    buffered,
+    simplified  // fallback на исходную если buffer too aggressive
+  );
+}
+```
 
-exports.computeEmissionRate = function(no2_avg, u_mean, v_mean, config) {
-  var utm42n = ee.Projection('EPSG:32642');
-  var grid_m = config.analysis_scale_m;  // 7000
+---
+
+## 11. Reference Baseline Builder implementation (NEW в v1.2)
+
+### 11.1. Module overview
+
+`src/js/modules/reference_baseline.js` — JS module для построения reference baseline в GEE.
+
+`src/py/setup/build_protected_areas_mask.py` — Python script для initial ingestion заповедников.
+
+`src/py/setup/altaisky_qa_test.py` — Python script для QA test Алтайского.
+
+### 11.2. JavaScript module: reference_baseline.js
+
+```javascript
+// src/js/modules/reference_baseline.js
+
+/**
+ * Reference Baseline construction module.
+ * 
+ * Implements Algorithm v2.3 §11.
+ * 
+ * @module reference_baseline
+ */
+
+/**
+ * Load Reference Clean Zones from Asset, filtered by quality status.
+ * 
+ * @param {object} config - config.reference_baseline
+ * @returns {ee.FeatureCollection}
+ */
+exports.loadReferenceZones = function(config) {
+  const zones_fc = ee.FeatureCollection(
+    'projects/nodal-thunder-481307-u1/assets/RuPlumeScan/reference/protected_areas'
+  );
   
-  // Reproject to UTM
-  var no2_proj = no2_avg.reproject({crs: utm42n, scale: grid_m});
-  var u_proj = u_mean.reproject({crs: utm42n, scale: grid_m});
-  var v_proj = v_mean.reproject({crs: utm42n, scale: grid_m});
+  // Filter to active zones (excluding pending/unreliable)
+  let active = zones_fc.filter(ee.Filter.eq('quality_status', 'active'));
   
-  // Compute fluxes
-  var flux_x = no2_proj.multiply(u_proj).rename('flux_x');
-  var flux_y = no2_proj.multiply(v_proj).rename('flux_y');
+  // Filter to zones in use_zones list
+  active = active.filter(ee.Filter.inList('zone_id', config.use_zones));
   
-  // Divergence in UTM
-  var dx = grid_m;
-  var dFx_dx = flux_x.translate(dx, 0, 'meters', utm42n)
-    .subtract(flux_x.translate(-dx, 0, 'meters', utm42n))
-    .divide(2 * dx);
-  var dFy_dy = flux_y.translate(0, dx, 'meters', utm42n)
-    .subtract(flux_y.translate(0, -dx, 'meters', utm42n))
-    .divide(2 * dx);
-  
-  var divergence = dFx_dx.add(dFy_dy).rename('divergence');
-  
-  // Beirle 2019 emission formula: E = D + N/τ
-  // where N = L · V_NO2 (NOx column = L * NO2 vertical column)
-  var L = config.no2_specific.no2_to_nox_ratio;        // 1.32 default
-  var tau_seconds = config.no2_specific.tau_hours * 3600;  // 14400 default
-  
-  var N_nox = no2_proj.multiply(L);
-  
-  var emission_rate = divergence
-    .add(N_nox.divide(tau_seconds))
-    .rename('emission_rate');
-  
-  // Optional: divergence-only mode (Beirle 2021 ESSD catalog approach)
-  if (config.no2_specific.tau_hours === null) {
-    emission_rate = divergence.rename('emission_rate');
+  // Optionally include Altaisky if quality passed
+  if (config.use_altaisky_if_quality_passed) {
+    const altaisky = zones_fc.filter(ee.Filter.and(
+      ee.Filter.eq('zone_id', 'altaisky'),
+      ee.Filter.eq('quality_status', 'active')
+    ));
+    active = active.merge(altaisky);
   }
   
-  return emission_rate;
+  return active;
+};
+
+/**
+ * Apply per-zone internal buffer (negative buffer).
+ * 
+ * @param {ee.FeatureCollection} zones
+ * @returns {ee.FeatureCollection}
+ */
+exports.applyInternalBuffers = function(zones) {
+  return zones.map(function(zone) {
+    const buffer_km = ee.Number(zone.get('internal_buffer_km'));
+    const simplified = zone.geometry().simplify({maxError: 100});
+    const buffered = simplified.buffer(buffer_km.multiply(-1000));
+    return zone.setGeometry(buffered);
+  });
+};
+
+/**
+ * Build per-zone climatology values.
+ * 
+ * @param {ee.FeatureCollection} zones (after internal buffer)
+ * @param {string} gas - "CH4" | "NO2" | "SO2"
+ * @param {number} target_year
+ * @param {number} target_month
+ * @param {object} config
+ * @returns {ee.FeatureCollection} - zones с added properties: baseline_ppb, sigma_ppb, count
+ */
+exports.buildZoneBaselines = function(zones, gas, target_year, target_month, config) {
+  const collections = {
+    CH4: { 
+      id: 'COPERNICUS/S5P/OFFL/L3_CH4', 
+      band: 'CH4_column_volume_mixing_ratio_dry_air_bias_corrected' 
+    },
+    NO2: { 
+      id: 'COPERNICUS/S5P/OFFL/L3_NO2', 
+      band: 'tropospheric_NO2_column_number_density' 
+    },
+    SO2: { 
+      id: 'COPERNICUS/S5P/OFFL/L3_SO2', 
+      band: 'SO2_column_number_density' 
+    }
+  };
+  
+  const ds = collections[gas];
+  
+  return zones.map(function(zone) {
+    const zone_geom = zone.geometry();
+    
+    const filtered = ee.ImageCollection(ds.id)
+      .select(ds.band)
+      .filter(ee.Filter.calendarRange(2019, target_year - 1, 'year'))
+      .filter(ee.Filter.calendarRange(target_month - 1, target_month + 1, 'month'))
+      .map(function(img) { return img.clip(zone_geom); });
+    
+    // Per-pixel median within zone
+    const median_image = filtered.reduce(ee.Reducer.median());
+    const mad_image = filtered
+      .map(function(img) { return img.subtract(median_image).abs(); })
+      .reduce(ee.Reducer.median())
+      .multiply(1.4826);
+    const count_image = filtered.count();
+    
+    // Aggregate to single value per zone (mean over zone pixels)
+    const baseline_value = median_image.reduceRegion({
+      reducer: ee.Reducer.mean(),
+      geometry: zone_geom,
+      scale: 7000,
+      maxPixels: 1e8
+    }).values().get(0);
+    
+    const sigma_value = mad_image.reduceRegion({
+      reducer: ee.Reducer.mean(),
+      geometry: zone_geom,
+      scale: 7000,
+      maxPixels: 1e8
+    }).values().get(0);
+    
+    const count_value = count_image.reduceRegion({
+      reducer: ee.Reducer.mean(),
+      geometry: zone_geom,
+      scale: 7000,
+      maxPixels: 1e8
+    }).values().get(0);
+    
+    return zone.set({
+      'baseline_ppb': baseline_value,
+      'sigma_ppb': sigma_value,
+      'count_avg': count_value,
+      'target_year': target_year,
+      'target_month': target_month,
+      'gas': gas
+    });
+  });
+};
+
+/**
+ * Build latitude-stratified baseline image для AOI.
+ * 
+ * Server-side approach: для каждого pixel находим nearest zone by centroid latitude.
+ * 
+ * @param {ee.Geometry} aoi
+ * @param {ee.FeatureCollection} zone_baselines (with baseline_ppb property)
+ * @param {number} scale_m
+ * @returns {ee.Image} с bands: reference_baseline, reference_sigma, zone_id_assignment
+ */
+exports.buildStratifiedBaseline = function(aoi, zone_baselines, scale_m) {
+  // Convert zones list to per-zone images using painted polygons
+  // Approach: для каждой zone create constant image with baseline value, 
+  // weighted by inverse latitude distance
+  
+  const lat_image = ee.Image.pixelLonLat().select('latitude');
+  
+  // Use reduceRegions or feature-iteration approach
+  // Simplified version: nearest zone by centroid latitude
+  
+  // Build images: для каждой zone — distance image
+  const zones_list = zone_baselines.toList(zone_baselines.size().min(10));
+  
+  // Initialize: very large distance, default baseline = NaN
+  const init_image = ee.Image.cat([
+    ee.Image.constant(99999).rename('min_lat_distance'),
+    ee.Image.constant(0).rename('reference_baseline'),
+    ee.Image.constant(0).rename('reference_sigma'),
+    ee.Image.constant('').rename('zone_id_assignment')
+  ]);
+  
+  // Iterate zones: для каждой compute lat_distance, where smaller — update
+  const result = ee.List.sequence(0, zones_list.size().subtract(1)).iterate(
+    function(idx, accum) {
+      const zone = ee.Feature(zones_list.get(idx));
+      const zone_lat = ee.Number(zone.get('centroid_lat'));
+      const zone_baseline = ee.Number(zone.get('baseline_ppb'));
+      const zone_sigma = ee.Number(zone.get('sigma_ppb'));
+      const zone_id = ee.String(zone.get('zone_id'));
+      
+      const lat_dist = lat_image.subtract(zone_lat).abs();
+      const accum_img = ee.Image(accum);
+      const closer_mask = lat_dist.lt(accum_img.select('min_lat_distance'));
+      
+      return accum_img
+        .addBands(lat_dist.where(closer_mask.not(), accum_img.select('min_lat_distance'))
+                          .rename('min_lat_distance'), null, true)
+        .addBands(ee.Image.constant(zone_baseline)
+                  .where(closer_mask.not(), accum_img.select('reference_baseline'))
+                  .rename('reference_baseline'), null, true)
+        .addBands(ee.Image.constant(zone_sigma)
+                  .where(closer_mask.not(), accum_img.select('reference_sigma'))
+                  .rename('reference_sigma'), null, true);
+    },
+    init_image
+  );
+  
+  return ee.Image(result).reproject({crs: 'EPSG:4326', scale: scale_m}).clip(aoi);
+};
+
+/**
+ * Full pipeline: load zones → buffer → build baselines → stratify
+ * 
+ * @param {string} gas
+ * @param {number} target_year
+ * @param {number} target_month
+ * @param {ee.Geometry} aoi
+ * @param {object} config
+ * @returns {ee.Image}
+ */
+exports.buildReferenceBaseline = function(gas, target_year, target_month, aoi, config) {
+  const zones = exports.loadReferenceZones(config.reference_baseline);
+  const buffered = exports.applyInternalBuffers(zones);
+  const zone_baselines = exports.buildZoneBaselines(buffered, gas, target_year, target_month, config);
+  const stratified = exports.buildStratifiedBaseline(aoi, zone_baselines, config.analysis_scale_m);
+  
+  return stratified;
+};
+
+/**
+ * Check if pixel is inside any reference zone (для matched_inside_reference_zone flag).
+ * 
+ * @param {ee.Geometry} pixel_or_geom
+ * @returns {ee.String} zone_id или 'none'
+ */
+exports.checkInsideZone = function(pixel_or_geom) {
+  const zones = ee.FeatureCollection(
+    'projects/nodal-thunder-481307-u1/assets/RuPlumeScan/reference/protected_areas'
+  );
+  
+  const intersecting = zones.filterBounds(pixel_or_geom);
+  
+  return ee.Algorithms.If(
+    intersecting.size().gt(0),
+    intersecting.first().get('zone_id'),
+    ee.String('none')
+  );
 };
 ```
 
-### 10.4. Edge handling
-
-См. v1.0 §10.4, без изменений.
-
-### 10.5. Closure-free `.map()`
-
-См. v1.0 §10.5, без изменений.
-
-### 10.6. Memory chunking
-
-См. v1.0 §10.6, без изменений.
-
----
-
-## 11. Python-GEE integration patterns
-
-### 11.1. GEE init в Python
+### 11.3. Python module: build_protected_areas_mask.py
 
 ```python
-# src/py/rca/__init__.py
+"""
+src/py/setup/build_protected_areas_mask.py
+
+Build RuPlumeScan/reference/protected_areas FeatureCollection и protected_areas_mask Image
+from manual GeoJSON files в data/protected_areas/.
+
+Implements P-00.1 reference part (CHANGE-0017).
+"""
 
 import ee
-import os
+import geopandas as gpd
+import json
+from pathlib import Path
+from datetime import date
 
-def init_gee():
-    project = os.environ.get('GEE_PROJECT', 'nodal-thunder-481307-u1')
-    try:
-        ee.Initialize(project=project)
-    except Exception:
-        ee.Authenticate()
-        ee.Initialize(project=project)
+DATA_DIR = Path('data/protected_areas')
+
+# Zone metadata (consistent with Algorithm v2.3 §2.2)
+ZONE_METADATA = {
+    'yugansky': {
+        'zone_id': 'yugansky',
+        'zone_name_ru': 'Юганский заповедник',
+        'zone_name_en': 'Yugansky Strict Nature Reserve',
+        'internal_buffer_km': 10,
+        'centroid_lat': 60.5,
+        'centroid_lon': 74.5,
+        'area_km2_total': 6500,
+        'natural_zone': 'middle_taiga_with_wetlands',
+        'latitude_band_min': 58.0,
+        'latitude_band_max': 65.0,
+        'quality_status': 'active',
+        'established_year': 1982,
+        'iucn_category': 'Ia',
+        'official_url': 'http://ugansky.ru'
+    },
+    'verkhnetazovsky': {
+        'zone_id': 'verkhnetazovsky',
+        'zone_name_ru': 'Верхне-Тазовский заповедник',
+        'zone_name_en': 'Verkhne-Tazovsky Strict Nature Reserve',
+        'internal_buffer_km': 5,
+        'centroid_lat': 63.5,
+        'centroid_lon': 84.0,
+        'area_km2_total': 6313,
+        'natural_zone': 'northern_taiga_permafrost',
+        'latitude_band_min': 62.0,
+        'latitude_band_max': 68.0,
+        'quality_status': 'active',
+        'established_year': 1986,
+        'iucn_category': 'Ia',
+        'official_url': 'https://oopt.info/index.php?oopt=125'
+    },
+    'kuznetsky_alatau': {
+        'zone_id': 'kuznetsky_alatau',
+        'zone_name_ru': 'Кузнецкий Алатау заповедник',
+        'zone_name_en': 'Kuznetsky Alatau Strict Nature Reserve',
+        'internal_buffer_km': 5,
+        'centroid_lat': 54.5,
+        'centroid_lon': 88.0,
+        'area_km2_total': 4019,
+        'natural_zone': 'mountain_taiga',
+        'latitude_band_min': 53.0,
+        'latitude_band_max': 57.0,
+        'quality_status': 'active',
+        'established_year': 1989,
+        'iucn_category': 'Ia',
+        'official_url': 'http://www.kuz-alatau.ru'
+    },
+    'altaisky': {
+        'zone_id': 'altaisky',
+        'zone_name_ru': 'Алтайский заповедник',
+        'zone_name_en': 'Altaisky Strict Nature Reserve',
+        'internal_buffer_km': 5,
+        'centroid_lat': 51.5,
+        'centroid_lon': 88.5,
+        'area_km2_total': 8810,
+        'natural_zone': 'high_mountain_with_alpine',
+        'latitude_band_min': 51.0,
+        'latitude_band_max': 54.0,
+        'quality_status': 'optional_pending_quality',  # initial; updated после QA
+        'established_year': 1932,
+        'iucn_category': 'Ia',
+        'official_url': 'https://www.altzapovednik.ru'
+    }
+}
+
+def load_zone_polygon(zone_id: str) -> gpd.GeoDataFrame:
+    """Load zone polygon from GeoJSON file."""
+    path = DATA_DIR / f'{zone_id}.geojson'
+    if not path.exists():
+        raise FileNotFoundError(f'Missing: {path}. Run web verification.')
+    return gpd.read_file(path)
+
+def build_features():
+    """Build list of ee.Feature for all zones."""
+    ee.Initialize(project='nodal-thunder-481307-u1')
+    
+    features = []
+    for zone_id, meta in ZONE_METADATA.items():
+        gdf = load_zone_polygon(zone_id)
+        
+        if len(gdf) != 1:
+            raise ValueError(f'{zone_id}: expected single polygon, got {len(gdf)}')
+        
+        # Convert geometry to ee.Geometry
+        geom_json = json.loads(gdf.geometry.iloc[0].__geo_interface__) \
+            if hasattr(gdf.geometry.iloc[0], '__geo_interface__') \
+            else gdf.geometry.iloc[0].__geo_interface__
+        
+        ee_geom = ee.Geometry(geom_json)
+        
+        # Compute area_km2_useable (after internal buffer)
+        useable_geom = ee_geom.simplify(100).buffer(-meta['internal_buffer_km'] * 1000)
+        useable_area_m2 = useable_geom.area().getInfo()
+        useable_area_km2 = useable_area_m2 / 1e6
+        
+        feature = ee.Feature(ee_geom, {
+            **meta,
+            'area_km2_useable': useable_area_km2,
+            'ingestion_date': str(date.today())
+        })
+        features.append(feature)
+    
+    return features
+
+def upload_protected_areas():
+    """Upload protected_areas FeatureCollection to GEE."""
+    features = build_features()
+    fc = ee.FeatureCollection(features)
+    
+    asset_id = 'projects/nodal-thunder-481307-u1/assets/RuPlumeScan/reference/protected_areas'
+    
+    task = ee.batch.Export.table.toAsset(
+        collection=fc,
+        description='upload_protected_areas',
+        assetId=asset_id
+    )
+    task.start()
+    print(f'Upload started: {task.id}')
+    return task
+
+def build_mask_raster():
+    """Build protected_areas_mask Image (1 inside any zone, 0 outside).
+    
+    Run AFTER protected_areas FeatureCollection uploaded.
+    """
+    fc = ee.FeatureCollection(
+        'projects/nodal-thunder-481307-u1/assets/RuPlumeScan/reference/protected_areas'
+    )
+    
+    # Apply internal buffers
+    buffered_fc = fc.map(lambda f: ee.Feature(
+        f.geometry().simplify(100).buffer(
+            ee.Number(f.get('internal_buffer_km')).multiply(-1000)
+        ),
+        f.toDictionary()
+    ))
+    
+    # Dissolve into single geometry
+    dissolved = buffered_fc.union()
+    
+    # Convert to raster mask
+    mask = ee.Image.constant(0).clip(dissolved.first().geometry()).paint(
+        dissolved, 1
+    )
+    mask = mask.rename('protected_mask').uint8().reproject(
+        crs='EPSG:4326', scale=7000
+    )
+    
+    aoi = ee.Geometry.Rectangle([60, 55, 90, 75])
+    
+    task = ee.batch.Export.image.toAsset(
+        image=mask,
+        description='build_protected_areas_mask',
+        assetId='projects/nodal-thunder-481307-u1/assets/RuPlumeScan/reference/protected_areas_mask',
+        region=aoi,
+        scale=7000,
+        maxPixels=1e10
+    )
+    task.start()
+    print(f'Mask export started: {task.id}')
+    return task
+
+if __name__ == '__main__':
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == 'mask':
+        build_mask_raster()
+    else:
+        upload_protected_areas()
 ```
 
-### 11.2. CSV → FeatureCollection upload
-
-См. v1.0 §11.2, без изменений.
-
-### 11.3. SO₂ Python plume fit (NEW в v1.1)
+### 11.4. Python module: altaisky_qa_test.py
 
 ```python
-# src/py/so2_fit/plume_models.py
+"""
+src/py/setup/altaisky_qa_test.py
 
-import numpy as np
-from scipy.optimize import curve_fit
-from scipy.special import erfc
+QA test для Алтайского заповедника per Algorithm v2.3 §11.4.
 
-def gaussian_exp_plume(coords, A, sigma_y, L, B):
-    """
-    Simplified Gaussian × exponential plume model in rotated coords.
-    
-    C(x', y') = A · exp(-x'/L) · exp(-y'²/(2·σ_y²)) + B
-    
-    coords: (x_prime, y_prime) — rotated coordinates (downwind, crosswind)
-    """
-    x_prime, y_prime = coords
-    return A * np.exp(-x_prime / L) * np.exp(-y_prime**2 / (2 * sigma_y**2)) + B
-
-def fit_full_nonlinear(sampled_points: np.ndarray, initial_guess: dict) -> dict:
-    """
-    Full 4-parameter fit (A, sigma_y, L, B) using scipy.optimize.curve_fit.
-    
-    sampled_points: array of shape (N, 3) with columns [x', y', concentration]
-    initial_guess: dict with starting values
-    
-    Returns: dict with fit_params, std_errors, r_squared, success
-    """
-    coords = (sampled_points[:, 0], sampled_points[:, 1])
-    values = sampled_points[:, 2]
-    
-    p0 = [initial_guess['A'], initial_guess['sigma_y'], 
-          initial_guess['L'], initial_guess['B']]
-    
-    try:
-        popt, pcov = curve_fit(gaussian_exp_plume, coords, values, p0=p0,
-                                bounds=([0, 1, 5, -np.inf], [np.inf, 100, 200, np.inf]),
-                                maxfev=5000)
-        
-        # Compute R²
-        y_pred = gaussian_exp_plume(coords, *popt)
-        ss_res = np.sum((values - y_pred)**2)
-        ss_tot = np.sum((values - np.mean(values))**2)
-        r_squared = 1 - ss_res / ss_tot
-        
-        return {
-            'success': True,
-            'A': popt[0],
-            'sigma_y_km': popt[1],
-            'L_km': popt[2],
-            'B': popt[3],
-            'A_err': np.sqrt(pcov[0, 0]),
-            'sigma_y_err': np.sqrt(pcov[1, 1]),
-            'L_err': np.sqrt(pcov[2, 2]),
-            'r_squared': r_squared
-        }
-    except Exception as e:
-        return {'success': False, 'error': str(e)}
-
-def fit_simplified_fioletov(sampled_points: np.ndarray, fixed_params: dict) -> dict:
-    """
-    Simplified Fioletov 2020 fit: only α (total mass) is free.
-    Fixed: σ = 15 km, τ = 6 h.
-    """
-    # Implementation: 1-parameter fit для α
-    # Q = α / τ, with τ fixed
-    pass
-```
-
-```python
-# src/py/so2_fit/gee_integration.py
+Compares mean XCH4 inside Алтайский vs Кузнецкий Алатау after seasonal correction.
+If diff > 30 ppb → flag as unreliable_for_xch4_baseline.
+"""
 
 import ee
-from .plume_models import fit_full_nonlinear
+import json
+from datetime import date
 
-def process_so2_source(source_id: str, period: tuple, config: dict):
-    """
-    Full SO2 per-source processing:
-    1. GEE: rotate stack to source frame, sample on grid
-    2. Python: fit plume model
-    3. GEE: upload result as Feature
-    """
-    # Step 1: trigger GEE rotation + sampling task
-    # Step 2: fetch sampled points
-    # Step 3: Python fit
-    # Step 4: upload result
-    pass
+ee.Initialize(project='nodal-thunder-481307-u1')
+
+REFERENCE_FC = ee.FeatureCollection(
+    'projects/nodal-thunder-481307-u1/assets/RuPlumeScan/reference/protected_areas'
+)
+
+def get_zone_geometry(zone_id: str) -> ee.Geometry:
+    zone = REFERENCE_FC.filter(ee.Filter.eq('zone_id', zone_id)).first()
+    return zone.geometry().simplify(100)
+
+def compute_seasonal_means(zone_geom, years_range, months):
+    """Compute mean XCH4 over zone for given months across years range."""
+    coll = ee.ImageCollection('COPERNICUS/S5P/OFFL/L3_CH4') \
+        .select('CH4_column_volume_mixing_ratio_dry_air_bias_corrected') \
+        .filter(ee.Filter.calendarRange(years_range[0], years_range[1], 'year')) \
+        .filter(ee.Filter.calendarRange(months[0], months[1], 'month'))
+    
+    mean_img = coll.reduce(ee.Reducer.mean())
+    mean_value = mean_img.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=zone_geom,
+        scale=7000,
+        maxPixels=1e8
+    ).values().get(0)
+    
+    return ee.Number(mean_value).getInfo()
+
+def run_qa_test():
+    """Algorithm v2.3 §11.4 QA test."""
+    
+    altaisky_geom = get_zone_geometry('altaisky')
+    kuz_alatau_geom = get_zone_geometry('kuznetsky_alatau')
+    
+    # Internal buffers
+    altaisky_buf = altaisky_geom.buffer(-5000)
+    kuz_buf = kuz_alatau_geom.buffer(-5000)
+    
+    print('Computing seasonal means (this takes a few minutes)...')
+    
+    alt_summer = compute_seasonal_means(altaisky_buf, [2019, 2025], [6, 8])
+    alt_winter = compute_seasonal_means(altaisky_buf, [2019, 2025], [12, 12])
+    kuz_summer = compute_seasonal_means(kuz_buf, [2019, 2025], [6, 8])
+    kuz_winter = compute_seasonal_means(kuz_buf, [2019, 2025], [12, 12])
+    
+    print(f'\nResults (XCH4 ppb):')
+    print(f'  Altaisky summer:        {alt_summer:.1f}')
+    print(f'  Altaisky winter:        {alt_winter:.1f}')
+    print(f'  Kuznetsky Alatau summer: {kuz_summer:.1f}')
+    print(f'  Kuznetsky Alatau winter: {kuz_winter:.1f}')
+    
+    abs_diff_summer = abs(alt_summer - kuz_summer)
+    abs_diff_winter = abs(alt_winter - kuz_winter)
+    seasonal_diff_alt = alt_summer - alt_winter
+    seasonal_diff_kuz = kuz_summer - kuz_winter
+    cycle_diff = abs(seasonal_diff_alt - seasonal_diff_kuz)
+    
+    print(f'\nDiagnostics:')
+    print(f'  |alt_summer - kuz_summer|: {abs_diff_summer:.1f} ppb (threshold 30)')
+    print(f'  |alt_winter - kuz_winter|: {abs_diff_winter:.1f} ppb (threshold 30)')
+    print(f'  Seasonal cycle diff:       {cycle_diff:.1f} ppb (threshold 20)')
+    
+    # Pass criteria
+    pass_summer = abs_diff_summer < 30
+    pass_winter = abs_diff_winter < 30
+    pass_cycle = cycle_diff < 20
+    overall_pass = pass_summer and pass_winter and pass_cycle
+    
+    print(f'\nResults:')
+    print(f'  Summer test: {"PASS" if pass_summer else "FAIL"}')
+    print(f'  Winter test: {"PASS" if pass_winter else "FAIL"}')
+    print(f'  Cycle test:  {"PASS" if pass_cycle else "FAIL"}')
+    print(f'  Overall:     {"PASS — Алтайский useable" if overall_pass else "FAIL — Алтайский unreliable"}')
+    
+    # Save result
+    result = {
+        'test_date': str(date.today()),
+        'altaisky_summer_ppb': float(alt_summer),
+        'altaisky_winter_ppb': float(alt_winter),
+        'kuznetsky_alatau_summer_ppb': float(kuz_summer),
+        'kuznetsky_alatau_winter_ppb': float(kuz_winter),
+        'abs_diff_summer_ppb': float(abs_diff_summer),
+        'abs_diff_winter_ppb': float(abs_diff_winter),
+        'cycle_diff_ppb': float(cycle_diff),
+        'pass_summer': bool(pass_summer),
+        'pass_winter': bool(pass_winter),
+        'pass_cycle': bool(pass_cycle),
+        'overall_pass': bool(overall_pass),
+        'recommended_status': 'active' if overall_pass else 'unreliable_for_xch4_baseline'
+    }
+    
+    # Upload result to Asset
+    feature = ee.Feature(None, result)
+    fc = ee.FeatureCollection([feature])
+    
+    asset_id = f'projects/nodal-thunder-481307-u1/assets/RuPlumeScan/validation/altaisky_qa/test_{date.today().strftime("%Y%m%d")}'
+    
+    task = ee.batch.Export.table.toAsset(
+        collection=fc,
+        description='altaisky_qa_test',
+        assetId=asset_id
+    )
+    task.start()
+    
+    print(f'\nResult uploaded: {asset_id}')
+    
+    if overall_pass:
+        print('\nNext step: update Алтайский quality_status to "active" в protected_areas Asset')
+    else:
+        print('\nNext step: keep Алтайский quality_status as "unreliable_for_xch4_baseline"')
+    
+    return result
+
+if __name__ == '__main__':
+    result = run_qa_test()
+    print('\n' + '='*60)
+    print('JSON result:')
+    print(json.dumps(result, indent=2, ensure_ascii=False))
 ```
 
-### 11.4. Sensitivity sweep automation
+### 11.5. Reference Baseline Asset workflow
 
-См. v1.0 §11.3, без изменений.
+```
+1. P-00.1 (revised): загружаем 4 zone polygons → protected_areas FeatureCollection + mask
+   - 3 active по умолчанию (Юганский, Верхнетазовский, Кузнецкий Алатау)
+   - 1 optional_pending_quality (Алтайский)
 
-### 11.5. Synthetic plume injection
+2. P-01.0a (NEW): для каждого target_year, target_month:
+   - Run reference_baseline.buildReferenceBaseline для CH4
+   - Export как RuPlumeScan/baselines/reference_CH4_<year>
+   - ASYNC: run altaisky_qa_test.py (если ещё не запускался)
 
-См. v1.0 §11.4, без изменений.
+3. После Алтайский QA test:
+   - Если pass: update protected_areas с altaisky.quality_status = 'active'
+   - Если fail: keep status as is, log reason
+   - Re-run reference baseline build (с/без Алтайского) если нужно
+
+4. Detection runs (Phase 2A) используют reference_<gas>_<year> Asset как input.
+```
 
 ---
 
-## 12. UI App структура
+## 12. Python-GEE integration patterns
 
-См. v1.0 §12, без изменений кроме:
-- `imeo_eq` preset вместо `lauvaux_eq` в dropdown
-- Reference comparison checkbox: Schuit / IMEO MARS / CAMS (вместо Lauvaux)
+Без изменений с v1.1.
 
 ---
 
-## 13. Testing infrastructure
+## 13. UI App структура
 
-### 13.1. Regression tests
+Без изменений с v1.1, плюс:
 
-Без существенных изменений. Baselines:
-- `kuzbass_2022_09_20.js` — ≥1 high-confidence CH4 event на эту дату с `default` preset
-- `norilsk_so2.js` — persistent SO2 detection любой летний день 2020-2024
-- `bovanenkovo_ch4.js` — ≥1 CH4 candidate в gas season
+**NEW в v1.2: Reference Baseline visualization layer**
+- Toggle layer "Reference baseline" — отображает reference_<gas>_<year> Asset на map
+- Toggle layer "Regional climatology" — отображает regional_<gas>_<year> Asset
+- Toggle layer "Baseline divergence" — отображает |reference - regional| (для diagnostic)
 
-### 13.2. Synthetic injection tests
+**NEW в v1.2: Reference zone polygons overlay**
+- Toggle layer "Protected areas" — показывает 4 zone boundaries на map
+- Click on zone → popup с metadata (name, area, quality_status, baseline value for current month)
 
-Без изменений.
+**Configuration UI extension:**
+- Section "Background mode" с radio buttons: dual_baseline (default), regional_only (diagnostic), reference_only (diagnostic)
+- Slider "Consistency tolerance (ppb)" в advanced settings (default 30)
 
-### 13.3. SO₂ Python fit tests (NEW в v1.1)
+---
+
+## 14. Testing infrastructure
+
+Без изменений с v1.1, плюс:
+
+### 14.1. Reference baseline tests (NEW в v1.2)
+
+`src/py/tests/test_protected_areas.py`:
 
 ```python
-# src/py/tests/test_so2_fit.py
-
 import pytest
-import numpy as np
-from so2_fit.plume_models import gaussian_exp_plume, fit_full_nonlinear
+import ee
+from src.py.setup.build_protected_areas_mask import ZONE_METADATA, build_features
 
-def test_synthetic_recovery():
-    """Generate synthetic plume, verify fit recovers parameters within 20%."""
-    # Generate ground truth
-    true_A, true_sigma, true_L, true_B = 100, 15, 50, 5
-    x = np.random.uniform(-50, 200, 500)
-    y = np.random.uniform(-100, 100, 500)
-    coords = (x, y)
-    values_true = gaussian_exp_plume(coords, true_A, true_sigma, true_L, true_B)
-    values_noisy = values_true + np.random.normal(0, 5, 500)
-    
-    sampled = np.column_stack([x, y, values_noisy])
-    
-    # Fit
-    result = fit_full_nonlinear(sampled, {
-        'A': 50, 'sigma_y': 10, 'L': 30, 'B': 0
-    })
-    
-    assert result['success']
-    assert abs(result['A'] - true_A) / true_A < 0.20
-    assert abs(result['sigma_y_km'] - true_sigma) / true_sigma < 0.20
+def test_zone_metadata_completeness():
+    """All 4 zones have required metadata fields."""
+    required_fields = [
+        'zone_id', 'zone_name_ru', 'internal_buffer_km',
+        'centroid_lat', 'centroid_lon', 'area_km2_total',
+        'natural_zone', 'latitude_band_min', 'latitude_band_max',
+        'quality_status', 'established_year', 'iucn_category'
+    ]
+    for zone_id, meta in ZONE_METADATA.items():
+        for field in required_fields:
+            assert field in meta, f'{zone_id} missing {field}'
+
+def test_quality_status_values():
+    """Quality status values are valid."""
+    valid_statuses = {'active', 'optional_pending_quality', 'unreliable_for_xch4_baseline'}
+    for zone_id, meta in ZONE_METADATA.items():
+        assert meta['quality_status'] in valid_statuses
+
+def test_latitude_bands_reasonable():
+    """Latitude bands are reasonable for Western Siberia."""
+    for zone_id, meta in ZONE_METADATA.items():
+        assert 50 <= meta['latitude_band_min'] <= 70
+        assert meta['latitude_band_min'] < meta['latitude_band_max']
+
+def test_initial_altaisky_status():
+    """Altaisky starts as optional_pending_quality."""
+    assert ZONE_METADATA['altaisky']['quality_status'] == 'optional_pending_quality'
+
+def test_internal_buffer_yugansky_larger():
+    """Yugansky has larger internal buffer (close to oil&gas)."""
+    assert ZONE_METADATA['yugansky']['internal_buffer_km'] >= 10
+    assert all(
+        ZONE_METADATA[z]['internal_buffer_km'] <= ZONE_METADATA['yugansky']['internal_buffer_km']
+        for z in ['verkhnetazovsky', 'kuznetsky_alatau', 'altaisky']
+    )
 ```
 
-### 13.4. CI
+### 14.2. Regression baselines (extended)
 
-Без изменений.
+Существующие из v1.1, плюс:
 
----
-
-## 14. Quotas и performance management
-
-См. v1.0 §14, без изменений.
+- **Reference baseline sanity check (NEW):** XCH4 inside Юганский в июле 2022 должен быть в range [1900, 1950] ppb. Если нет — baseline build flawed.
+- **Cross-baseline consistency check (NEW):** для clean reference regions (not industrial), |reference_baseline - regional_climatology| < 30 ppb. Если diverge → contamination в regional suspect.
 
 ---
 
-## 15. Версионирование RNA
+## 15. Quotas и performance management
+
+Без изменений с v1.1.
+
+**NEW в v1.2 considerations:**
+- Reference baseline build добавляет ~10-15% к compute budget per Run (загрузка zones + per-zone reductions)
+- Mitigation: cache reference baselines as Asset (built once per target_year, reused для всех months/configs)
+- Reference baseline Asset размер: ~5 MB per gas per year (per-month bands)
+
+---
+
+## 16. Версионирование RNA
 
 | Версия | Дата | Изменение |
 |---|---|---|
 | 1.0 | 2026-04-25 | Первая версия после Algorithm v2.1. |
-| 1.1 | 2026-04-25 | Sync с Algorithm v2.2 после verification через GPT-5.5: ERA5_LAND → ERA5 в default; IME U_eff defaults обновлены на Schuit 2023 TROPOMI calibration (0.59·U10); Lauvaux2022 → IMEO MARS как primary reference catalog; добавлены `no2_specific` и `so2_specific` секции в default preset; SO2 Python plume fit module (scipy.optimize) с full nonlinear primary + Fioletov simplified fallback; Beirle 2019/2021 bibliographic correction. |
+| 1.1 | 2026-04-25 | Sync с Algorithm v2.2: ERA5_LAND→ERA5, IME defaults Schuit, IMEO MARS, no2_specific/so2_specific sections, SO2 Python plume fit. |
+| 1.2 | 2026-04-26 | Sync с Algorithm v2.3 (CHANGE-0017): Reference Clean Zone support, protected_areas Asset structure, reference_baseline.js module, build_protected_areas_mask.py + altaisky_qa_test.py, dual_baseline mode default, regional_only/reference_only diagnostic presets, confidence weights включают consistency factor + inside_zone penalty. |
 
 RNA обновляется при изменении Algorithm.md или Asset structure.
