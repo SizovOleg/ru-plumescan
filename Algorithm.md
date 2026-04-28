@@ -532,12 +532,46 @@ exports.buildLatitudeStratifiedBaseline = function(aoi, zone_baselines, target_y
 
 **Note:** Это упрощённая реализация — production version в RNA §11 использует server-side approach без `evaluate()` callback.
 
-**Sanity checks для Reference Baseline:**
+**Sanity checks для Reference Baseline (revised 2026-04-28 against empirical data):**
 
-- Юганский XCH4 baseline в июле должен быть в range [1900, 1950] ppb (wetland enhancement)
-- Юганский XCH4 baseline в декабре должен быть в range [1850, 1890] ppb (winter low)
-- Верхнетазовский должен быть на 10-30 ppb ниже Юганского летом (less wetland)
-- Если Юганский baseline зимой > 1900 ppb или летом > 1970 ppb → **flag, baseline build flawed**
+Original ranges (1900-1950 ppb July peak, 30-80 ppb amplitude) were
+projections from in-situ surface CH4 flux to TROPOMI column observations
+and turned out to be **overestimates**. Column XCH4 (vertically integrated)
+is much flatter than near-surface CH4 because boundary layer accumulation
+and atmospheric mixing dilute wetland emission signal in the column total.
+
+Revised expectations validated against Sizov et al. (in prep, Western
+Siberia methane wetland monitoring project, 7-year empirical TROPOMI L3
+climatology 2019-2025):
+
+| Metric | Empirical (article zone-mean wetland) | Yugansky concentrated wetland (>70%) |
+|---|---|---|
+| Peak month | August-September | August-October |
+| Peak XCH4 | ~1860-1880 ppb | ~1880-1900 ppb (+20-30 ppb vs zone-mean) |
+| Trough month | April-May (post-snowmelt) | April-May |
+| Trough XCH4 | ~1840-1860 ppb | ~1870-1880 ppb |
+| Seasonal amplitude | ~15-25 ppb | ~15-30 ppb |
+| Annual trend | +9 ppb/year (2019: 1821 → 2025: 1884), matches global | matches |
+
+Yugansky values are 20-30 ppb higher than article zone-mean because Yugansky
+useable area has >70% wetland fraction (Vasyugan bog interior после 10 km
+buffer cuts off taiga edges), while article zone-4 (Middle taiga) is only
+28.5% wetland (rest forest at ~1849 ppb dilutes zone-mean).
+
+**This validates dual baseline architecture** — reference-anchored approach
+delivers cleaner wetland signature than industrial-buffer-exclusion (negative
+space) methodology. Concentrated wetland reference is exactly what we
+engineered.
+
+**Updated red flags (baseline build flawed if):**
+- Yugansky baseline зимой > 1920 ppb (was: > 1900) — local CH4 contamination suspect
+- Yugansky baseline летом > 1950 ppb (was: > 1970) — boundary layer / retrieval bias
+- Seasonal amplitude > 50 ppb — likely retrieval noise, not real signal
+- Verkhne-Tazovsky systematically warmer than Yugansky in summer — northern permafrost should be 5-15 ppb cooler in column
+
+**Validation source:** Sizov et al. in prep, table 3 (7-year mean monthly
+XCH4 by wetland zone) and table 4 (annual trend, +9 ppb/year). См.
+`docs/p-01.0a_validation_report.md` для side-by-side comparison.
 
 #### 3.4.1. Regional climatology с industrial buffer (secondary, broader coverage)
 

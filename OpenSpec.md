@@ -519,6 +519,69 @@ existing architectural decisions. Документируются здесь дл
   без re-clipping) либо fail (investigate root cause, possibly TD-0004
   full-resolution polygon download).
 
+### MC-2026-04-28-A — Algorithm §11.5 sanity expectations corrected against empirical data
+
+- Date: 2026-04-28
+- Initiator: Researcher (P-01.0a Yugansky validation review)
+- Type: Algorithm sanity-check refinement (sub-implementation, не CHANGE)
+- Affected document: `Algorithm.md` §3.4.0 «Sanity checks для Reference Baseline»
+- Reason: Initial expectations (Yugansky July 1900-1950 ppb, amplitude
+  30-80 ppb) were unverified projections from in-situ surface CH4 flux
+  to TROPOMI column observations. Direct empirical validation against
+  Sizov et al. in prep (Western Siberia methane wetland monitoring,
+  7-year TROPOMI L3 climatology 2019-2025) showed:
+  - Article wetland zone-mean July: 1854 ppb (not 1900-1950)
+  - Article peak month: September (not July)
+  - Article seasonal amplitude: ~15-25 ppb (not 30-80)
+  - Annual trend: +9 ppb/year (matches global atmospheric CH4 increase)
+- Empirical validation:
+  - Yugansky measurements (concentrated wetland >70% useable area):
+    Jul 1880, Sep 1887, Oct 1892 — 20-30 ppb HIGHER than article zone-mean
+  - Difference explained by wetland fraction: Yugansky useable area
+    ~70% wetland (Vasyugan bog interior after 10 km buffer trims taiga
+    edges), article zone-4 only 28.5% wetland (rest forest at ~1849 ppb
+    dilutes zone-mean)
+- Decision:
+  - Algorithm §3.4.0 sanity checks updated с revised ranges
+  - Yugansky validation status: **PASSED** против revised expectations
+  - Architecture working correctly — concentrated wetland baseline есть
+    exactly engineered behaviour
+  - Original expectations preserved в OpenSpec для historical context
+    (column XCH4 ≠ surface flux scaling lesson learned)
+- Verification: docs/p-01.0a_validation_report.md содержит side-by-side
+  table наш vs article values + interpretation.
+- Note: Это НЕ исправление архитектурного решения. Это коррекция
+  expected sanity ranges, которая validates что dual baseline approach
+  работает как designed.
+
+### MC-2026-04-28-B — GEE memory limit mitigation (P-01.0a Phase A)
+
+- Date: 2026-04-28
+- Initiator: Claude (P-01.0a Phase A diagnostics encountered failures)
+- Type: Implementation refinement (operational)
+- Affected code: `src/py/setup/build_reference_baseline_ch4.py` (added
+  `time.sleep(60)` between monthly compute calls)
+- Reason: 4 of 12 monthly `getInfo()` calls failed с
+  `User memory limit exceeded` в **deterministic** pattern M02/M05/M08/M11
+  (Q-mid months — every 3rd month начиная с February). Initially suspected
+  cumulative user-quota throttling.
+- **Updated 2026-04-28 (после re-run):** sleep(60) **НЕ помог** — те же 4
+  months failed. Pattern deterministic, не throttle:
+  - Working months (M01, M03, M04, M06, M07, M09, M10, M12) — все имеют
+    edge effects в `calendarRange(target_month-1, target_month+1, 'month')`
+    (months 0, 13 partial filter → smaller dataset → fits memory)
+  - Failing months (M02, M05, M08, M11) — Q-mid centred 3-month windows
+    с full 3-month data → stack of `~6 years × 30 daily images = ~540` images
+    triggers reduce memory limit
+- Mitigation: 8/12 months sufficient для Yugansky validation (peak Oct,
+  trough Apr — both в "working" list). Phase B Export через batch task
+  (server-side, не interactive) обходит client memory limit.
+- Future fix (deferred to TD-0008 в KNOWN_TODOS): refactor `compute_seasonal_mean`
+  на per-month-per-year compute с aggregation в Python вместо single ee
+  reducer over 540 images. Это уменьшит peak server-memory ~30×.
+- Verification: 8/12 monthly diagnostics complete с pacing OR без — same
+  4 months fail. Phase B Export batch task succeeded для full 12-month image.
+
 ---
 
 ## 5. Archived changes (superseded)

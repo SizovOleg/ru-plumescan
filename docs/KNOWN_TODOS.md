@@ -83,6 +83,73 @@ validation evidence что constant L=1.32 занижает accuracy.
 
 ---
 
+## TD-0008 — Refactor build_zone_baseline_single_month memory footprint (Q-mid months)
+
+- **Origin:** P-01.0a Phase A diagnostics (commit `<merge SHA>`, 2026-04-28)
+- **Owner:** Claude (исполняющий) при triggering
+- **Status:** deferred — sleep(60) pacing не помог, pattern deterministic Q-mid
+  (M02/M05/M08/M11 fail). 8/12 months sufficient для Yugansky validation;
+  Phase B Export batch task succeeded server-side (не client-side memory).
+- **Trigger:** revisit if (a) Phase 2A detection requires per-pixel
+  reference baseline values for Q-mid months interactively, OR (b) need
+  diagnostics для NO₂/SO₂ baseline (not just CH₄), where collection
+  size может trigger same issue.
+- **Root cause:** `filtered.reduce(median)` followed by `reduceRegion(mean)`
+  on stack of ~540 daily images (6 years × 3 months × ~30 daily L3 mosaics)
+  exceeds GEE user-side memory limit для interactive `getInfo()` calls.
+  Working months (M01, M03, M04, M06, M07, M09, M10, M12) имеют edge effects
+  (months 0, 13 partial filter → smaller stack).
+- **Fix sketch:** refactor `compute_seasonal_mean` / `build_zone_baseline_single_month`
+  на per-month-per-year compute (chunked) с aggregation в Python instead of
+  single big server-side reduce. Reduces peak memory ~30×.
+  ```python
+  monthly_means = []
+  for year in range(YEAR_MIN, YEAR_MAX):
+      for m_offset in (-1, 0, 1):
+          target_m = target_month + m_offset
+          monthly_mean = (
+              filter_year_month(year, target_m)
+              .median()
+              .reduceRegion(...).getInfo()
+          )
+          monthly_means.append(monthly_mean)
+  zone_aggregate = python_median(monthly_means)
+  ```
+- **Effort:** 1 day refactor + re-test all 12 months.
+
+---
+
+## TD-0007 — Yugansky October peak vs article September peak (1-month timing offset)
+
+- **Origin:** P-01.0a Yugansky validation (commit `<merge SHA>`, 2026-04-28)
+- **Owner:** Claude (исполняющий) при triggering
+- **Status:** deferred — discrepancy между Yugansky measured peak month (October)
+  и Sizov et al. in prep article zone-mean peak month (September). Both
+  observations valid against revised Algorithm §3.4.0 expectations
+  (peak month range August-October).
+- **Trigger:** revisit if Phase 2A detection sensitivity shows artifacts
+  associated with the October-vs-September timing (e.g., reference baseline
+  systematically overestimates October XCH₄ → masks real Plume Events
+  в October).
+- **Hypotheses:**
+  1. Internal buffer 10 km cuts off edge wetlands (which peak earlier in
+     August-September) — concentrated bog interior peaks 1-2 weeks later
+     due to thermal lag of permafrost-underlain peat.
+  2. Year-to-year variability в 6-year (ours 2019-2024) vs 7-year
+     (article 2019-2025) averaging windows — 2025 may have peaked earlier.
+  3. Real spatial heterogeneity within zone — Yugansky zone is larger
+     and more northerly than article zone-mean, possibly later snow-melt
+     and freeze-up timing.
+- **What's deferred:**
+  1. Per-pixel monthly histogram inside Yugansky useable area (identify
+     spatial gradient of peak timing).
+  2. Year-by-year decomposition (separate 2019/2020/2021/2022/2023/2024
+     monthly cycles — has any single year dragged the average).
+  3. Consult article authors про zone-4 specific composition.
+- **Effort:** 1 day analysis.
+
+---
+
 ## TD-0006 — Юганский useable area dropdown (если P-01.0a покажет low count)
 
 - **Origin:** P-00.1 v2 closure (researcher revised escalation gate 2026-04-27)
