@@ -96,6 +96,38 @@ validation evidence что constant L=1.32 занижает accuracy.
   - Refactor compute (preferred, 1 day work)
   - Temporal interpolation as Phase 2A Option A
   - Skip Q-mid detection runs as Phase 2A Option B
+
+### TD-0008 fix hypothesis (researcher 2026-04-28)
+
+Pattern **M02/M05/M08/M11 = months 2,5,8,11 = every 3rd modulo 12**.
+Это suggests **GEE internal compute scheduling**, не data-related (data
+same across all months — TROPOMI L3 daily mosaics evenly distributed).
+
+**Option C (worth testing):** split full-year build на **12 separate
+batch tasks** instead of single iteration в одном process. Each Export
+task получает own server-side memory allocation, обходя cumulative
+graph memory limit one process generates iterating over 12 months.
+
+Implementation sketch:
+```python
+for month in range(1, 13):
+    task = ee.batch.Export.image.toAsset(
+        image=build_single_month_stratified(month),
+        assetId=f"...reference_CH4_2019_2025_v1_M{month:02d}",
+        ...
+    )
+    task.start()
+# Затем merge 12 single-month assets в multi-band Image через
+# ee.Image.cat() или одиночное reuploading combined.
+```
+
+**Trade-off:** 12 separate tasks vs 1 multi-band Image → finer error
+isolation (one Q-mid month fail не блокирует others) + parallelizable.
+**Risk:** orchestration complexity (waiting на 12 tasks, dealing с
+partial failures, merging final asset).
+
+**Effort estimate revised: 2-3 days** (hypothesis test + refactor +
+re-run для CH4 + 4-band per-zone-id assets — also useful для other gases).
 - **Root cause:** `filtered.reduce(median)` followed by `reduceRegion(mean)`
   on stack of ~540 daily images (6 years × 3 months × ~30 daily L3 mosaics)
   exceeds GEE user-side memory limit для interactive `getInfo()` calls.
