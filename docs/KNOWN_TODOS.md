@@ -83,17 +83,19 @@ validation evidence что constant L=1.32 занижает accuracy.
 
 ---
 
-## TD-0008 — Refactor build_zone_baseline_single_month memory footprint (Q-mid months)
+## TD-0008 — Refactor build_zone_baseline_single_month memory footprint (Q-mid months) **[PRIORITY HIGH]**
 
-- **Origin:** P-01.0a Phase A diagnostics (commit `<merge SHA>`, 2026-04-28)
+- **Origin:** P-01.0a Phase A diagnostics (commit `<P-01.0a merge SHA>`, 2026-04-28)
 - **Owner:** Claude (исполняющий) при triggering
-- **Status:** deferred — sleep(60) pacing не помог, pattern deterministic Q-mid
-  (M02/M05/M08/M11 fail). 8/12 months sufficient для Yugansky validation;
-  Phase B Export batch task succeeded server-side (не client-side memory).
-- **Trigger:** revisit if (a) Phase 2A detection requires per-pixel
-  reference baseline values for Q-mid months interactively, OR (b) need
-  diagnostics для NO₂/SO₂ baseline (not just CH₄), where collection
-  size может trigger same issue.
+- **Status:** **PRIORITY HIGH (escalated from `deferred`)** — после P-01.0a confirmed
+  pattern не fix-able by simple sleep, и Phase 2A pipeline зависит от valid
+  baselines для biologically active transition months (M05 Май, M08 Август,
+  M11 Ноябрь — wetland onset, peak emission, freeze-up).
+- **Trigger:** **BLOCKS Phase 2A** (CH4 detection) — must mitigate перед production
+  detection runs. Любой из:
+  - Refactor compute (preferred, 1 day work)
+  - Temporal interpolation as Phase 2A Option A
+  - Skip Q-mid detection runs as Phase 2A Option B
 - **Root cause:** `filtered.reduce(median)` followed by `reduceRegion(mean)`
   on stack of ~540 daily images (6 years × 3 months × ~30 daily L3 mosaics)
   exceeds GEE user-side memory limit для interactive `getInfo()` calls.
@@ -116,6 +118,71 @@ validation evidence что constant L=1.32 занижает accuracy.
   zone_aggregate = python_median(monthly_means)
   ```
 - **Effort:** 1 day refactor + re-test all 12 months.
+
+---
+
+## TD-0009 — Cross-biome shared October peak — regional synoptic signal (potential publication)
+
+- **Origin:** P-01.0a validation (commit `<P-01.0a merge SHA>`, 2026-04-28)
+- **Owner:** Researcher (decision), Claude (analysis при triggering)
+- **Status:** **deferred — not blocker** для current detection pipeline.
+  Reference baseline functional с this peak (it's measured signal, не bug).
+- **Observation:** All 3 reference zones share October peak — Yugansky 1892,
+  Verkhne-Tazovsky 1894, Kuznetsky Alatau 1872. Three biomes (wetland /
+  permafrost / mountain), three latitudes (60.5° / 63.5° / 54.5°N) — все
+  показывают **synchronous** October peak. Suggests common atmospheric-
+  column-level driver, не biotic emission cycle.
+- **Trigger:** **HIGH-VALUE investigation** if researcher has cycles для:
+  1. Confirm signal not artefact (e.g., MODIS snow filter edge case при
+     NDSI 20-40 partial coverage в October)
+  2. Cross-validate against in-situ tall-tower measurements (Karasevsky,
+     Demyansky, ZOTTO towers)
+  3. ERA5 boundary layer height time-series correlation
+- **Hypotheses to test:**
+  1. Autumn PBL collapse + surface accumulation (lowland-only — but Kuz-Alatau
+     mountain forest also peaks → counter-evidence)
+  2. MODIS snow filter edge case (NDSI 20-40 partial coverage bias)
+  3. Soil-atmosphere shoulder season exchange (literature: Walter Anthony 2010,
+     Sasakawa 2012 для Yamal lakes ebullition)
+  4. Continental transport pattern shift (autumn jet stream rearrangement)
+- **Potential publication:** «First systematic empirical observation of
+  cross-biome synchronous October XCH₄ peak in Western Siberia from TROPOMI
+  L3 reference baseline» — could be standalone short paper или figure
+  для tool-paper Phase 7 Discussion section.
+- **Effort:** 5-7 days analysis + literature comparison + figure preparation
+  (если pursued seriously).
+
+---
+
+## TD-0010 — Kuznetsky Alatau retrieval count limitation
+
+- **Origin:** P-01.0a validation (commit `<P-01.0a merge SHA>`, 2026-04-28)
+- **Owner:** Claude / Researcher
+- **Status:** documented caveat, не actionable refactor.
+- **Observation:** Kuznetsky Alatau monthly counts 60-140 (vs Yugansky
+  ~5000-8000, Verkhne-Tazovsky ~10000-20000). Two orders of magnitude
+  fewer valid TROPOMI observations. Cause: mountain cloud cover + SWIR
+  retrieval challenges over snow / aspect-variable surfaces.
+- **Implications для Phase 2A:**
+  - Zone-aggregate baseline still computable (~80-140 valid pixels/month
+    adequate для zone-mean median).
+  - Sigma estimates noisier for low-N months (e.g., M01 sigma=2.78 ppb
+    с count=18 likely artefact).
+  - Reduced sensitivity для CH4 detection в latitude band 53-57°N
+    (where Kuznetsky Alatau is primary reference per Algorithm §11.3
+    Step 4 latitude stratification).
+- **Trigger:** if Phase 2A detection в Кузбасс / Мариинск /
+  Новокузнецк latitude band shows higher false-negative rate vs
+  northern bands, revisit baseline coverage.
+- **Mitigations:**
+  1. Accept reduced sensitivity, document in tool-paper limitations.
+  2. Consider alternative reference zones для southern band (Saian
+     Mountains? Tomsk forest reserves? — would require DNA mutation
+     per §2.3 для added zones).
+  3. Composite baseline (Yugansky weighted partially для южной AOI)
+     — alters latitude stratification methodology.
+- **Effort:** 0.5 day documentation, или 3-5 days если adding new
+  reference zone.
 
 ---
 

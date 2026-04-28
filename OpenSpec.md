@@ -576,11 +576,42 @@ existing architectural decisions. Документируются здесь дл
 - Mitigation: 8/12 months sufficient для Yugansky validation (peak Oct,
   trough Apr — both в "working" list). Phase B Export через batch task
   (server-side, не interactive) обходит client memory limit.
-- Future fix (deferred to TD-0008 в KNOWN_TODOS): refactor `compute_seasonal_mean`
+- Future fix (deferred to TD-0008 в KNOWN_TODOS, **priority HIGH** после
+  P-01.0a confirms deterministic pattern): refactor `compute_seasonal_mean`
   на per-month-per-year compute с aggregation в Python вместо single ee
   reducer over 540 images. Это уменьшит peak server-memory ~30×.
 - Verification: 8/12 monthly diagnostics complete с pacing OR без — same
-  4 months fail. Phase B Export batch task succeeded для full 12-month image.
+  4 months fail. Phase B Export batch task TBD (FAIL on first attempt с
+  null-constant error — fixed via valid-zones filter + `--phase-b-only` flag).
+
+### MC-2026-04-28-C — Altaisky exclusion rationale documented (P-01.0a)
+
+- Date: 2026-04-28
+- Initiator: Researcher (P-01.0a closure review)
+- Type: Defensibility documentation (sub-implementation refinement)
+- Affected document: `Algorithm.md` §11.4.1 (NEW worked example subsection)
+- Reason: P-01.0a Altaisky QA test failed (winter +34.86 ppb, cycle_diff
+  +14.25 ppb). Per DNA §2.1 запрет 16 — Altaisky excluded from production
+  baseline. Researcher review highlighted что raw "FAIL" verdict
+  insufficient для Phase 7 tool-paper documentation; need physical
+  explanation defensible перед reviewers.
+- Decision: Algorithm §11.4.1 «Worked example — P-01.0a Altaisky FAIL»
+  added с:
+  - Full numerical metrics (alt/kuz summer + winter, abs_diff, seasonal_diff,
+    cycle_diff, verdicts).
+  - Physical interpretation: Altaisky elevation >1500 m places column
+    above winter PBL inversion height (~500-1500 m континентальной
+    Сибири). Summer match excellent (0.61 ppb) когда PBL deep, winter
+    decoupling (+35 ppb) когда Altaisky free-tropospheric vs lowland
+    surface-trapped.
+  - Defensibility statement (quoted form) для tool-paper Phase 7 use.
+- Verification: Algorithm §11.4.1 содержит full worked example;
+  validation report cross-references; Asset
+  `RuPlumeScan/validation/altaisky_qa/test_20260428` Feature имеет
+  full metrics для programmatic reference.
+- Note: Это НЕ override DNA §2.1 запрет 16. Altaisky остаётся
+  `unreliable_for_xch4_baseline`; documentation establishes scientific
+  defensibility for the exclusion decision.
 
 ---
 

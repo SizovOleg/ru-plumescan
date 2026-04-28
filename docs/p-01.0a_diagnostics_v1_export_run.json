@@ -1,0 +1,177 @@
+{
+  "build_date": "2026-04-28",
+  "target_year": 2025,
+  "version": "v1",
+  "include_altaisky": false,
+  "build_duration_s": 1404.02232670784,
+  "diagnostics": [
+    {
+      "zone_id": "yugansky",
+      "month": 1,
+      "baseline_ppb": 1877.905364160677,
+      "sigma_ppb": 23.195572144072905,
+      "count_avg": 609.5529411764707
+    },
+    {
+      "zone_id": "verkhnetazovsky",
+      "month": 1,
+      "baseline_ppb": null,
+      "sigma_ppb": null,
+      "count_avg": 0
+    },
+    {
+      "zone_id": "kuznetsky_alatau",
+      "month": 1,
+      "baseline_ppb": 1882.5154007167187,
+      "sigma_ppb": 2.7798686484631006,
+      "count_avg": 17.50588235294117
+    },
+    {
+      "zone_id": "yugansky",
+      "month": 3,
+      "baseline_ppb": 1878.5905714335252,
+      "sigma_ppb": 28.149038311007242,
+      "count_avg": 4433.301960784314
+    },
+    {
+      "zone_id": "verkhnetazovsky",
+      "month": 3,
+      "baseline_ppb": 1871.5877478591965,
+      "sigma_ppb": 29.7667332127153,
+      "count_avg": 12401.70980392157
+    },
+    {
+      "zone_id": "kuznetsky_alatau",
+      "month": 3,
+      "baseline_ppb": 1875.215039599133,
+      "sigma_ppb": 17.163603747379046,
+      "count_avg": 90.32941176470588
+    },
+    {
+      "zone_id": "yugansky",
+      "month": 4,
+      "baseline_ppb": 1874.609053928539,
+      "sigma_ppb": 23.302859073118594,
+      "count_avg": 8567.529411764704
+    },
+    {
+      "zone_id": "verkhnetazovsky",
+      "month": 4,
+      "baseline_ppb": 1866.9473680445853,
+      "sigma_ppb": 28.690773681344478,
+      "count_avg": 19779.917647058817
+    },
+    {
+      "zone_id": "kuznetsky_alatau",
+      "month": 4,
+      "baseline_ppb": 1863.5412105138944,
+      "sigma_ppb": 20.041568822327697,
+      "count_avg": 81.34509803921567
+    },
+    {
+      "zone_id": "yugansky",
+      "month": 6,
+      "baseline_ppb": 1874.813706328136,
+      "sigma_ppb": 28.734436290726034,
+      "count_avg": 8318.96862745098
+    },
+    {
+      "zone_id": "verkhnetazovsky",
+      "month": 6,
+      "baseline_ppb": 1860.865845755299,
+      "sigma_ppb": 33.45313813952191,
+      "count_avg": 17809.8588235294
+    },
+    {
+      "zone_id": "kuznetsky_alatau",
+      "month": 6,
+      "baseline_ppb": 1844.643373839064,
+      "sigma_ppb": 8.285621182534777,
+      "count_avg": 68.31764705882352
+    },
+    {
+      "zone_id": "yugansky",
+      "month": 7,
+      "baseline_ppb": 1880.380176797695,
+      "sigma_ppb": 34.088286706890635,
+      "count_avg": 5357.6078431372525
+    },
+    {
+      "zone_id": "verkhnetazovsky",
+      "month": 7,
+      "baseline_ppb": 1863.3537136585912,
+      "sigma_ppb": 35.80162983263226,
+      "count_avg": 14857.047058823524
+    },
+    {
+      "zone_id": "kuznetsky_alatau",
+      "month": 7,
+      "baseline_ppb": 1845.5267091943747,
+      "sigma_ppb": 8.666953250346436,
+      "count_avg": 95.50196078431374
+    },
+    {
+      "zone_id": "yugansky",
+      "month": 9,
+      "baseline_ppb": 1886.8175558132564,
+      "sigma_ppb": 30.785550505650463,
+      "count_avg": 5281.356862745095
+    },
+    {
+      "zone_id": "verkhnetazovsky",
+      "month": 9,
+      "baseline_ppb": 1878.3293989151534,
+      "sigma_ppb": 31.76633219508472,
+      "count_avg": 9169.56470588235
+    },
+    {
+      "zone_id": "kuznetsky_alatau",
+      "month": 9,
+      "baseline_ppb": 1864.4255027602528,
+      "sigma_ppb": 24.063649098350925,
+      "count_avg": 140.156862745098
+    },
+    {
+      "zone_id": "yugansky",
+      "month": 10,
+      "baseline_ppb": 1892.0459355912783,
+      "sigma_ppb": 30.69670432552348,
+      "count_avg": 3498.435294117646
+    },
+    {
+      "zone_id": "verkhnetazovsky",
+      "month": 10,
+      "baseline_ppb": 1893.9570785099377,
+      "sigma_ppb": 27.596613972861707,
+      "count_avg": 4744.168627450981
+    },
+    {
+      "zone_id": "kuznetsky_alatau",
+      "month": 10,
+      "baseline_ppb": 1872.2182448471658,
+      "sigma_ppb": 25.30789001040042,
+      "count_avg": 98.16470588235295
+    },
+    {
+      "zone_id": "yugansky",
+      "month": 12,
+      "baseline_ppb": null,
+      "sigma_ppb": null,
+      "count_avg": 0
+    },
+    {
+      "zone_id": "verkhnetazovsky",
+      "month": 12,
+      "baseline_ppb": null,
+      "sigma_ppb": null,
+      "count_avg": 0
+    },
+    {
+      "zone_id": "kuznetsky_alatau",
+      "month": 12,
+      "baseline_ppb": null,
+      "sigma_ppb": null,
+      "count_avg": 0
+    }
+  ]
+}

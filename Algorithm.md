@@ -1023,6 +1023,63 @@ else:
   log reason: which tests failed, magnitudes
 ```
 
+#### 11.4.1. Worked example — P-01.0a Altaisky FAIL (2026-04-28)
+
+Первый production run этого QA test (history 2019-2025) **failed**:
+
+| Metric | Value | Tolerance | Status |
+|---|---|---|---|
+| `alt_summer` (Jun-Aug) | 1842.0190 ppb | — | — |
+| `kuz_summer` (Jun-Aug) | 1842.6326 ppb | — | — |
+| `abs_diff_summer` | **0.6136 ppb** | < 30 | ✅ PASS |
+| `alt_winter` (Dec-Feb) | 1848.1722 ppb | — | — |
+| `kuz_winter` (Dec-Feb) | 1883.0369 ppb | — | — |
+| `abs_diff_winter` | **34.8647 ppb** | < 30 | ❌ FAIL (+4.86) |
+| `seasonal_diff_alt` (sum-win) | -6.1532 ppb | — | nearly flat |
+| `seasonal_diff_kuz` (sum-win) | -40.4043 ppb | — | strong winter accumulation |
+| `cycle_diff` | **34.2511 ppb** | < 20 | ❌ FAIL (+14.25) |
+| **Verdict** | — | — | **`unreliable_for_xch4_baseline`** |
+
+**Physical interpretation (defensible перед reviewers):**
+
+Summer match excellent (0.61 ppb diff) — **both zones показывают similar
+free-tropospheric column XCH₄ values around 1842 ppb** в summer. В этом
+сезоне planetary boundary layer (PBL) deep enough, чтобы distinguishing
+high-altitude vs lowland atmospheric column отсутствует.
+
+Winter divergence (35 ppb) — **Алтайский (centroid 1500-2000 m elevation,
+peaks > 3000 m)** is **above typical winter PBL inversion height** (~500-
+1500 m в континентальной Сибири). Зимой над high-mountain biome:
+
+- Surface CH₄ accumulation в stable winter PBL **не достигает** column
+  retrieval altitude — Алтайский measures predominantly free-tropospheric
+  air (relatively constant ~1850 ppb).
+- Кузнецкий Алатау (peaks ~1800 m, but most useable area 500-1200 m)
+  **внутри** winter PBL inversion → measures surface-trapped CH₄
+  accumulation (1883 ppb winter mean, +40 ppb seasonal).
+
+**Это physically meaningful divergence**, не retrieval bug. Алтайский как
+reference zone для AOI (latitude band 55-75°N flatlands) **не репрезентативен**
+для winter atmospheric column conditions.
+
+**Decision (per DNA §2.1 запрет 16):** Алтайский excluded из production
+reference baseline. `quality_status="unreliable_for_xch4_baseline"`.
+Production CH₄ baseline = v1 (3 zones: Юганский + Верхне-Тазовский +
+Кузнецкий Алатау).
+
+**Defensibility statement для tool-paper Phase 7:**
+> "QA test designed to flag reference zones whose atmospheric column
+> XCH₄ behaviour diverges from the AOI flatland regime. Altaisky's
+> high-altitude location (centroid 1500+ m, peaks > 3000 m) places its
+> column above typical winter PBL inversion heights, decoupling its
+> winter signature from lowland atmospheric accumulation regime
+> (35 ppb winter divergence vs lowland Kuznetsky Alatau, despite 0.6
+> ppb summer match). Exclusion from production baseline preserves
+> AOI-representative climatology for the 55-75°N detection envelope."
+
+См. полный QA result Asset `RuPlumeScan/validation/altaisky_qa/test_20260428`,
+plus `docs/p-01.0a_altaisky_qa_result.json`.
+
 ### 11.5. Reference Baseline as standalone Asset
 
 Reference Baseline Asset публикуется отдельно от Detection runs:

@@ -349,6 +349,10 @@ def build_full_year_image(
     12 separate stratification computations (per-month). Каждый month
     independent — ee.Image.cat() в конце соединяет, без getInfo() в loop
     server graph остаётся manageable.
+
+    Skip months где **все** zones имеют null baseline (M12 polar night).
+    Filter null zones before stratification (M01 Verkhne-Tazovsky no-sun)
+    чтобы избежать `Image.constant(null)` ошибки.
     """
     aoi = ee.Geometry.Rectangle(list(AOI_BBOX))
     zones = load_reference_zones(use_zones, include_altaisky)
@@ -359,9 +363,32 @@ def build_full_year_image(
         suffix = f"M{month:02d}"
         logger.info("Build stratified image M%02d", month)
         zone_baselines = build_zone_baseline_single_month(buffered, "CH4", target_year, month)
-        stratified = build_stratified_baseline_image(aoi, zone_baselines, suffix)
+
+        # Filter zones с non-null baseline_ppb (avoid null-constant error
+        # для polar-night zones e.g. Verkhne-Tazovsky in Jan/Dec).
+        valid_zones = zone_baselines.filter(ee.Filter.notNull(["baseline_ppb"]))
+
+        # Server-side check size — skip month если 0 valid zones (e.g., M12
+        # all polar night). Используем getInfo() здесь т.к. это lightweight
+        # FC count.
+        try:
+            n_valid = valid_zones.size().getInfo()
+        except ee.EEException as exc:
+            logger.warning("M%02d: size() failed (%s), skipping band", month, exc)
+            continue
+
+        if n_valid == 0:
+            logger.warning("M%02d: 0 valid zones (likely all polar night) — skipping band", month)
+            continue
+
+        logger.info("M%02d: %d valid zones for stratification", month, n_valid)
+        stratified = build_stratified_baseline_image(aoi, valid_zones, suffix)
         monthly_images.append(stratified)
 
+    if not monthly_images:
+        raise RuntimeError("No valid months for Phase B Export. Aborting.")
+
+    logger.info("Phase B: %d valid month bands в final Image", len(monthly_images))
     return ee.Image.cat(monthly_images)
 
 
@@ -428,6 +455,12 @@ def main() -> int:
         action="store_true",
         help="Не запускать Export.toAsset (только compute diagnostics).",
     )
+    parser.add_argument(
+        "--phase-b-only",
+        action="store_true",
+        help="Skip Phase A diagnostics, immediately Phase B Image.cat + Export.toAsset. "
+        "Полезно при retry после fixing build issue (избегает 15-min sleep loop).",
+    )
     args = parser.parse_args()
 
     logger = setup_logger()
@@ -440,16 +473,21 @@ def main() -> int:
         args.include_altaisky,
     )
 
-    started_at = time.time()
-    diagnostics = collect_diagnostics(
-        args.target_year, ACTIVE_ZONES_V1, args.include_altaisky, logger
-    )
-    elapsed = time.time() - started_at
-    logger.info(
-        "Phase A diagnostics duration: %.1f s (%d zone-month entries)",
-        elapsed,
-        len(diagnostics),
-    )
+    if args.phase_b_only:
+        logger.info("--phase-b-only: skipping Phase A diagnostics")
+        diagnostics = []
+        elapsed = 0.0
+    else:
+        started_at = time.time()
+        diagnostics = collect_diagnostics(
+            args.target_year, ACTIVE_ZONES_V1, args.include_altaisky, logger
+        )
+        elapsed = time.time() - started_at
+        logger.info(
+            "Phase A diagnostics duration: %.1f s (%d zone-month entries)",
+            elapsed,
+            len(diagnostics),
+        )
 
     # Save diagnostics (cwd-independent default — anchor to repo root)
     from pathlib import Path
