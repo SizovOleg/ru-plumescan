@@ -58,6 +58,7 @@ FOLDERS: tuple[str, ...] = (
     "RuPlumeScan/validation",
     "RuPlumeScan/validation/synthetic_injection",
     "RuPlumeScan/validation/regression",
+    "RuPlumeScan/validation/altaisky_qa",
 )
 
 

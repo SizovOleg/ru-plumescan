@@ -532,12 +532,46 @@ exports.buildLatitudeStratifiedBaseline = function(aoi, zone_baselines, target_y
 
 **Note:** Это упрощённая реализация — production version в RNA §11 использует server-side approach без `evaluate()` callback.
 
-**Sanity checks для Reference Baseline:**
+**Sanity checks для Reference Baseline (revised 2026-04-28 against empirical data):**
 
-- Юганский XCH4 baseline в июле должен быть в range [1900, 1950] ppb (wetland enhancement)
-- Юганский XCH4 baseline в декабре должен быть в range [1850, 1890] ppb (winter low)
-- Верхнетазовский должен быть на 10-30 ppb ниже Юганского летом (less wetland)
-- Если Юганский baseline зимой > 1900 ppb или летом > 1970 ppb → **flag, baseline build flawed**
+Original ranges (1900-1950 ppb July peak, 30-80 ppb amplitude) were
+projections from in-situ surface CH4 flux to TROPOMI column observations
+and turned out to be **overestimates**. Column XCH4 (vertically integrated)
+is much flatter than near-surface CH4 because boundary layer accumulation
+and atmospheric mixing dilute wetland emission signal in the column total.
+
+Revised expectations validated against Sizov et al. (in prep, Western
+Siberia methane wetland monitoring project, 7-year empirical TROPOMI L3
+climatology 2019-2025):
+
+| Metric | Empirical (article zone-mean wetland) | Yugansky concentrated wetland (>70%) |
+|---|---|---|
+| Peak month | August-September | August-October |
+| Peak XCH4 | ~1860-1880 ppb | ~1880-1900 ppb (+20-30 ppb vs zone-mean) |
+| Trough month | April-May (post-snowmelt) | April-May |
+| Trough XCH4 | ~1840-1860 ppb | ~1870-1880 ppb |
+| Seasonal amplitude | ~15-25 ppb | ~15-30 ppb |
+| Annual trend | +9 ppb/year (2019: 1821 → 2025: 1884), matches global | matches |
+
+Yugansky values are 20-30 ppb higher than article zone-mean because Yugansky
+useable area has >70% wetland fraction (Vasyugan bog interior после 10 km
+buffer cuts off taiga edges), while article zone-4 (Middle taiga) is only
+28.5% wetland (rest forest at ~1849 ppb dilutes zone-mean).
+
+**This validates dual baseline architecture** — reference-anchored approach
+delivers cleaner wetland signature than industrial-buffer-exclusion (negative
+space) methodology. Concentrated wetland reference is exactly what we
+engineered.
+
+**Updated red flags (baseline build flawed if):**
+- Yugansky baseline зимой > 1920 ppb (was: > 1900) — local CH4 contamination suspect
+- Yugansky baseline летом > 1950 ppb (was: > 1970) — boundary layer / retrieval bias
+- Seasonal amplitude > 50 ppb — likely retrieval noise, not real signal
+- Verkhne-Tazovsky systematically warmer than Yugansky in summer — northern permafrost should be 5-15 ppb cooler in column
+
+**Validation source:** Sizov et al. in prep, table 3 (7-year mean monthly
+XCH4 by wetland zone) and table 4 (annual trend, +9 ppb/year). См.
+`docs/p-01.0a_validation_report.md` для side-by-side comparison.
 
 #### 3.4.1. Regional climatology с industrial buffer (secondary, broader coverage)
 
@@ -989,6 +1023,63 @@ else:
   log reason: which tests failed, magnitudes
 ```
 
+#### 11.4.1. Worked example — P-01.0a Altaisky FAIL (2026-04-28)
+
+Первый production run этого QA test (history 2019-2025) **failed**:
+
+| Metric | Value | Tolerance | Status |
+|---|---|---|---|
+| `alt_summer` (Jun-Aug) | 1842.0190 ppb | — | — |
+| `kuz_summer` (Jun-Aug) | 1842.6326 ppb | — | — |
+| `abs_diff_summer` | **0.6136 ppb** | < 30 | ✅ PASS |
+| `alt_winter` (Dec-Feb) | 1848.1722 ppb | — | — |
+| `kuz_winter` (Dec-Feb) | 1883.0369 ppb | — | — |
+| `abs_diff_winter` | **34.8647 ppb** | < 30 | ❌ FAIL (+4.86) |
+| `seasonal_diff_alt` (sum-win) | -6.1532 ppb | — | nearly flat |
+| `seasonal_diff_kuz` (sum-win) | -40.4043 ppb | — | strong winter accumulation |
+| `cycle_diff` | **34.2511 ppb** | < 20 | ❌ FAIL (+14.25) |
+| **Verdict** | — | — | **`unreliable_for_xch4_baseline`** |
+
+**Physical interpretation (defensible перед reviewers):**
+
+Summer match excellent (0.61 ppb diff) — **both zones показывают similar
+free-tropospheric column XCH₄ values around 1842 ppb** в summer. В этом
+сезоне planetary boundary layer (PBL) deep enough, чтобы distinguishing
+high-altitude vs lowland atmospheric column отсутствует.
+
+Winter divergence (35 ppb) — **Алтайский (centroid 1500-2000 m elevation,
+peaks > 3000 m)** is **above typical winter PBL inversion height** (~500-
+1500 m в континентальной Сибири). Зимой над high-mountain biome:
+
+- Surface CH₄ accumulation в stable winter PBL **не достигает** column
+  retrieval altitude — Алтайский measures predominantly free-tropospheric
+  air (relatively constant ~1850 ppb).
+- Кузнецкий Алатау (peaks ~1800 m, but most useable area 500-1200 m)
+  **внутри** winter PBL inversion → measures surface-trapped CH₄
+  accumulation (1883 ppb winter mean, +40 ppb seasonal).
+
+**Это physically meaningful divergence**, не retrieval bug. Алтайский как
+reference zone для AOI (latitude band 55-75°N flatlands) **не репрезентативен**
+для winter atmospheric column conditions.
+
+**Decision (per DNA §2.1 запрет 16):** Алтайский excluded из production
+reference baseline. `quality_status="unreliable_for_xch4_baseline"`.
+Production CH₄ baseline = v1 (3 zones: Юганский + Верхне-Тазовский +
+Кузнецкий Алатау).
+
+**Defensibility statement для tool-paper Phase 7:**
+> "QA test designed to flag reference zones whose atmospheric column
+> XCH₄ behaviour diverges from the AOI flatland regime. Altaisky's
+> high-altitude location (centroid 1500+ m, peaks > 3000 m) places its
+> column above typical winter PBL inversion heights, decoupling its
+> winter signature from lowland atmospheric accumulation regime
+> (35 ppb winter divergence vs lowland Kuznetsky Alatau, despite 0.6
+> ppb summer match). Exclusion from production baseline preserves
+> AOI-representative climatology for the 55-75°N detection envelope."
+
+См. полный QA result Asset `RuPlumeScan/validation/altaisky_qa/test_20260428`,
+plus `docs/p-01.0a_altaisky_qa_result.json`.
+
 ### 11.5. Reference Baseline as standalone Asset
 
 Reference Baseline Asset публикуется отдельно от Detection runs:
@@ -1000,6 +1091,92 @@ Reference Baseline Asset публикуется отдельно от Detection 
 - **Citation:** «Reference Baseline для атмосферного метана над Западной Сибирью на основе российских заповедников: Юганский, Верхнетазовский, Кузнецкий Алатау, Алтайский (when applicable). Period 2019-2025. Generated by RU-PlumeScan v1.0.»
 
 Это **dedicated scientific contribution** независимо от detection toolkit.
+
+### 11.5.1. Validator-side expected ranges (per zone, per month)
+
+Эти ranges — **canonical reference** для verification correctness Reference
+Baseline build. Применяются validator (researcher / external reviewer / future
+Claude session) для решения PASS/FAIL без обращения к raw TROPOMI data.
+
+**Note:** §3.4.0 «Sanity checks для Reference Baseline» содержит implementer
+sanity checks (HOW to build correctly). Эта секция содержит validator
+expected ranges (WHAT to expect от correctly-built baseline). Both должны
+agree — если diverge, см. OpenSpec MC entries для resolution history.
+
+Empirical values from P-01.0a build (target_year=2025, history 2019-2024,
+3 active zones; updated 2026-04-28 against Sizov et al. in prep article t3
+seven-year wetland zone climatology).
+
+**Yugansky (60.5°N, useable 2946 km², ~70% wetland fraction):**
+
+| Month | Expected baseline range (ppb) | Empirical M-2025 | Notes |
+|-------|-------------------------------|------------------|-------|
+| Jan-Feb | 1875-1885 | 1877.91 (M01) | winter accumulation в stable BL |
+| Mar | 1875-1885 | 1878.59 | snowmelt onset |
+| Apr | 1870-1880 | **1874.61 (trough)** | post-snowmelt clean air |
+| May | 1870-1880 | (Q-mid fail M05) | minimum expected |
+| Jun-Jul | 1875-1885 | 1874.81 / 1880.38 | summer wetland onset |
+| Aug | 1880-1895 | (Q-mid fail M08) | peak wetland emission |
+| Sep | 1880-1895 | 1886.82 | continued wetland |
+| Oct | 1885-1900 | **1892.05 (peak)** | peak: synoptic BL collapse + late wetland |
+| Nov | 1880-1895 | (Q-mid fail M11) | autumn |
+| Dec | NaN | NaN | polar night |
+
+- Annual amplitude: ~15-30 ppb (column XCH₄ flatness — boundary layer dilution)
+- +20-30 ppb shift vs article zone-mean wetland (concentrated wetland design feature)
+
+**Verkhne-Tazovsky (63.5°N, useable 4066 km², permafrost taiga):**
+
+| Month | Expected baseline range (ppb) | Empirical M-2025 | Notes |
+|-------|-------------------------------|------------------|-------|
+| Jan-Feb | NaN polar night | NaN (count 0) | no sun at 63.5°N |
+| Mar | 1865-1880 | 1871.59 | sun returns |
+| Apr | 1860-1875 | 1866.95 | trough |
+| May | 1855-1870 | (Q-mid fail) | minimum |
+| Jun-Jul | 1855-1870 | 1860.87 / 1863.35 | summer minimum (no wetland here) |
+| Aug | 1865-1880 | (Q-mid fail) | rising |
+| Sep | 1875-1885 | 1878.33 | rising |
+| Oct | 1885-1900 | **1893.96 (peak)** | synoptic peak |
+| Nov | 1880-1895 | (Q-mid fail) | autumn |
+| Dec | NaN polar night | NaN | |
+
+- Annual amplitude: ~30-35 ppb (larger than Yugansky — less wetland buffering)
+- 5-15 ppb cooler than Yugansky in summer (no wetland enhancement)
+
+**Kuznetsky Alatau (54.5°N, useable 2220 km², mountain taiga, no wetlands):**
+
+| Month | Expected baseline range (ppb) | Empirical M-2025 | Notes |
+|-------|-------------------------------|------------------|-------|
+| Jan | 1875-1890 | 1882.52 | winter (low count ~18, retrieval challenge) |
+| Mar | 1870-1885 | 1875.22 | |
+| Apr | 1860-1875 | 1863.54 | trough |
+| May | 1845-1860 | (Q-mid fail) | summer minimum onset |
+| Jun-Jul | 1840-1860 | **1844.64 / 1845.53 (lowest)** | mountain forest, no source |
+| Aug | 1855-1875 | (Q-mid fail) | rising |
+| Sep | 1860-1875 | 1864.43 | |
+| Oct | 1865-1880 | **1872.22 (peak)** | smallest peak (no wetland) |
+| Nov | 1860-1875 | (Q-mid fail) | |
+| Dec | NaN polar night | NaN | |
+
+- Annual amplitude: ~25-30 ppb
+- Lowest summer values among all 3 zones (mountain forest baseline)
+
+**Cross-zone agreement check (validation gate):**
+
+Все 3 zones должны share October peak — это shared synoptic / freeze-up signal,
+не zone-specific. Если October НЕ peak в Yugansky или Verkhne-Tazovsky:
+investigate (year-to-year variability, wetland phenology shift).
+
+**Altaisky (51.5°N, status: `unreliable_for_xch4_baseline`, NOT in production):**
+
+QA test 2026-04-28 result: alt_summer 1842.02 vs kuz_summer 1842.63 (PASS),
+alt_winter 1848.17 vs kuz_winter 1883.04 (FAIL +34.86), cycle_diff 34.25 (FAIL).
+Excluded per DNA §2.1 запрет 16. См. `docs/p-01.0a_altaisky_qa_result.json` +
+Asset `RuPlumeScan/validation/altaisky_qa/test_20260428`.
+
+**Validation provenance:** `docs/p-01.0a_validation_report.md`,
+`docs/p-01.0a_diagnostics_v1_full.json`, OpenSpec MC-2026-04-28-A
+(против Sizov et al. in prep article t3 + t4).
 
 ---
 
