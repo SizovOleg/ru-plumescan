@@ -1035,6 +1035,92 @@ Reference Baseline Asset публикуется отдельно от Detection 
 
 Это **dedicated scientific contribution** независимо от detection toolkit.
 
+### 11.5.1. Validator-side expected ranges (per zone, per month)
+
+Эти ranges — **canonical reference** для verification correctness Reference
+Baseline build. Применяются validator (researcher / external reviewer / future
+Claude session) для решения PASS/FAIL без обращения к raw TROPOMI data.
+
+**Note:** §3.4.0 «Sanity checks для Reference Baseline» содержит implementer
+sanity checks (HOW to build correctly). Эта секция содержит validator
+expected ranges (WHAT to expect от correctly-built baseline). Both должны
+agree — если diverge, см. OpenSpec MC entries для resolution history.
+
+Empirical values from P-01.0a build (target_year=2025, history 2019-2024,
+3 active zones; updated 2026-04-28 against Sizov et al. in prep article t3
+seven-year wetland zone climatology).
+
+**Yugansky (60.5°N, useable 2946 km², ~70% wetland fraction):**
+
+| Month | Expected baseline range (ppb) | Empirical M-2025 | Notes |
+|-------|-------------------------------|------------------|-------|
+| Jan-Feb | 1875-1885 | 1877.91 (M01) | winter accumulation в stable BL |
+| Mar | 1875-1885 | 1878.59 | snowmelt onset |
+| Apr | 1870-1880 | **1874.61 (trough)** | post-snowmelt clean air |
+| May | 1870-1880 | (Q-mid fail M05) | minimum expected |
+| Jun-Jul | 1875-1885 | 1874.81 / 1880.38 | summer wetland onset |
+| Aug | 1880-1895 | (Q-mid fail M08) | peak wetland emission |
+| Sep | 1880-1895 | 1886.82 | continued wetland |
+| Oct | 1885-1900 | **1892.05 (peak)** | peak: synoptic BL collapse + late wetland |
+| Nov | 1880-1895 | (Q-mid fail M11) | autumn |
+| Dec | NaN | NaN | polar night |
+
+- Annual amplitude: ~15-30 ppb (column XCH₄ flatness — boundary layer dilution)
+- +20-30 ppb shift vs article zone-mean wetland (concentrated wetland design feature)
+
+**Verkhne-Tazovsky (63.5°N, useable 4066 km², permafrost taiga):**
+
+| Month | Expected baseline range (ppb) | Empirical M-2025 | Notes |
+|-------|-------------------------------|------------------|-------|
+| Jan-Feb | NaN polar night | NaN (count 0) | no sun at 63.5°N |
+| Mar | 1865-1880 | 1871.59 | sun returns |
+| Apr | 1860-1875 | 1866.95 | trough |
+| May | 1855-1870 | (Q-mid fail) | minimum |
+| Jun-Jul | 1855-1870 | 1860.87 / 1863.35 | summer minimum (no wetland here) |
+| Aug | 1865-1880 | (Q-mid fail) | rising |
+| Sep | 1875-1885 | 1878.33 | rising |
+| Oct | 1885-1900 | **1893.96 (peak)** | synoptic peak |
+| Nov | 1880-1895 | (Q-mid fail) | autumn |
+| Dec | NaN polar night | NaN | |
+
+- Annual amplitude: ~30-35 ppb (larger than Yugansky — less wetland buffering)
+- 5-15 ppb cooler than Yugansky in summer (no wetland enhancement)
+
+**Kuznetsky Alatau (54.5°N, useable 2220 km², mountain taiga, no wetlands):**
+
+| Month | Expected baseline range (ppb) | Empirical M-2025 | Notes |
+|-------|-------------------------------|------------------|-------|
+| Jan | 1875-1890 | 1882.52 | winter (low count ~18, retrieval challenge) |
+| Mar | 1870-1885 | 1875.22 | |
+| Apr | 1860-1875 | 1863.54 | trough |
+| May | 1845-1860 | (Q-mid fail) | summer minimum onset |
+| Jun-Jul | 1840-1860 | **1844.64 / 1845.53 (lowest)** | mountain forest, no source |
+| Aug | 1855-1875 | (Q-mid fail) | rising |
+| Sep | 1860-1875 | 1864.43 | |
+| Oct | 1865-1880 | **1872.22 (peak)** | smallest peak (no wetland) |
+| Nov | 1860-1875 | (Q-mid fail) | |
+| Dec | NaN polar night | NaN | |
+
+- Annual amplitude: ~25-30 ppb
+- Lowest summer values among all 3 zones (mountain forest baseline)
+
+**Cross-zone agreement check (validation gate):**
+
+Все 3 zones должны share October peak — это shared synoptic / freeze-up signal,
+не zone-specific. Если October НЕ peak в Yugansky или Verkhne-Tazovsky:
+investigate (year-to-year variability, wetland phenology shift).
+
+**Altaisky (51.5°N, status: `unreliable_for_xch4_baseline`, NOT in production):**
+
+QA test 2026-04-28 result: alt_summer 1842.02 vs kuz_summer 1842.63 (PASS),
+alt_winter 1848.17 vs kuz_winter 1883.04 (FAIL +34.86), cycle_diff 34.25 (FAIL).
+Excluded per DNA §2.1 запрет 16. См. `docs/p-01.0a_altaisky_qa_result.json` +
+Asset `RuPlumeScan/validation/altaisky_qa/test_20260428`.
+
+**Validation provenance:** `docs/p-01.0a_validation_report.md`,
+`docs/p-01.0a_diagnostics_v1_full.json`, OpenSpec MC-2026-04-28-A
+(против Sizov et al. in prep article t3 + t4).
+
 ---
 
 ## 12. Sensitivity analysis и synthetic injection
