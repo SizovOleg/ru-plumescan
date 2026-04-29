@@ -173,6 +173,55 @@ validation evidence что constant L=1.32 занижает accuracy.
 
 ---
 
+## TD-0021 NEW — Zone-boundary detection sensitivity (CH₄ Phase 2A)
+
+- **Origin:** P-01.0b extrapolation investigation 2026-04-29 (TD-0019
+  resolution + latitude transect at 75°E findings).
+- **Status:** documented, deferred к Phase 2A CH₄ detection design.
+- **Observation:** reference baseline shows discrete plateaus at latitude
+  band boundaries: Kuznetsky↔Yugansky transition ~57°N (Δ ≈ 14 ppb step,
+  1846→1880), Yugansky↔Verkhne-Tazovsky transition ~62°N (Δ ≈ 17 ppb step,
+  1880→1863). Regional baseline continuous. Phase 2A CH₄ detection within
+  ~50 km from these boundaries может trigger spurious
+  `consistency_flag=false` (dual-baseline disagreement caused by reference
+  discretization, не real anomaly).
+- **NOT blocker для NO₂/SO₂ — they don't use reference baseline в v1**
+  (single regional climatology only per RNA §11.1). Critical для Phase 2A
+  CH₄ design.
+- **Mitigation options (для Phase 2A DevPrompt or CHANGE-0018):**
+  - **(a)** moving-average smoothing reference over neighbouring 100 km
+    latitude — preserves architecture, smooths step changes
+  - **(b)** distance-weighted blend nearest-2 zones — full
+    methodology revision (CHANGE-0018 candidate)
+  - **(c)** record `lat_dist_km_to_band_boundary` per CH₄ candidate and
+    treat `consistency_flag=false` near boundaries как "ambiguous"
+    requiring additional evidence (cluster + wind alignment)
+- **Effort:** option (c) ≈ 1 hour (config flag в Phase 2A); options (a)/(b)
+  ≈ 1-3 days each.
+
+---
+
+## TD-0022 NEW — Article t1 full zonal-stats comparison (Phase 1c validation)
+
+- **Origin:** P-01.0b extrapolation investigation 2026-04-29 — partial
+  comparison only (Zone 4 confirmed +19 ppb plausible per period+biome
+  mismatch).
+- **Status:** deferred к Phase 1c.
+- **Need:** full t1 zonal stats for all 8 article zones (currently only
+  Zone 4 = 1854 ppb provided). Specifically Zone 1 (Tundra 67-72°N) and
+  Zone 8 (Steppe 52-55°N) needed to evaluate latitude-stratified
+  reference assignments на extrapolated bands.
+- **Phase 1c plan:** request adjacent project authors → extract all 8 zones
+  → compare с our reference per latitude band → independent third-party
+  validation для tool-paper.
+- **Action:** capture in Phase 1c DevPrompt (P-01.2_dual_baseline_validation.md
+  предположительно). Если authors недоступны — note as limitation, не
+  blocker.
+- **Effort:** depends on author response time + manual data extraction
+  (~30 min once received).
+
+---
+
 ## TD-0020 — Bovanenkovo test point coordinate error in cross-check labels
 
 - **Origin:** P-01.0b validation report point 6 misnomer 2026-04-29

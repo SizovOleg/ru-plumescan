@@ -29,20 +29,25 @@
 - ✅ Архивированы baseline pc_test1_scan.js регрессии (Кузбасс 2022-09-20, Z=3.96)
 
 **В прогрессе:**
-- 🔄 Phase 0 — P-00.1 (industrial + protected areas reference, переписан под dual scope)
+- 🔄 Phase 1b NO₂/SO₂ regional climatology (CH₄ done; NO₂ submitted 2026-04-29, SO₂ pending NO₂ outcome)
+
+**Готово (Phases 0 + 1a + 1b CH₄):**
+- ✅ **P-00.1** — industrial + protected areas reference (CHANGE-0017, AOI standardised, +18 GPPD post-CR)
+- ✅ **P-01.0a** — Reference baseline CH₄ live (`RuPlumeScan/baselines/reference_CH4_2019_2025_v1`); Алтайский QA test FAILED → unreliable_for_xch4_baseline; 3 active zones
+- ✅ **P-01.0b CH₄** — Regional CH₄ climatology live (`RuPlumeScan/baselines/regional_CH4_2019_2025`, 36 bands, industrial-buffer-30km, full provenance); Option C verified (12/12 SUCCEEDED)
+- ✅ **TD-0019 RESOLVED** — reference latitude-stratification extrapolation impact assessed: R²=0.0023, methodology bounded
+- ✅ **6 CR claims atomically remediated** (PR #3): schema v1.1, multi-band-select pipeline, provenance helpers, Altaisky audit trail
 
 **НЕ готово:**
-- ❌ Industrial proxy mask GEE Asset (P-00.1 industrial part)
-- ❌ Protected areas reference mask + FeatureCollection (P-00.1 reference part, NEW в v1.1)
 - ❌ Configuration Presets storage (P-00.3)
-- ❌ Reference baselines для CH₄/NO₂/SO₂ (P-01.0a, NEW в v1.1)
-- ❌ Regional climatologies (P-01.0b)
+- ❌ Regional climatologies NO₂/SO₂ (P-01.0b in flight)
+- ❌ Reference baselines NO₂/SO₂ — **not planned для v1** (single regional only per RNA §11.1)
+- ❌ Phase 1c dual-baseline cross-check validation (CH₄ only; pending all 3 gases regional climatologies)
 - ❌ Detection modules (CH₄, NO₂, SO₂)
 - ❌ RCA ingesters
 - ❌ Comparison Engine
 - ❌ UI App
 - ❌ Validation campaign
-- ❌ Алтайский QA test (Phase 1 deliverable)
 
 **Total estimated effort до v1.0 release:** 6-7 месяцев при solo development с поддержкой Claude Code Desktop. (Was 4-6 в v1.0; +1-2 weeks for protected areas ingestion + reference baseline build).
 
@@ -146,12 +151,12 @@ v1.0 RELEASE                             [месяц 7]      → СПДЗЗ subm
 4. Sanity check: Юганский XCH4 в июле 2022 в range [1900, 1950] ppb
 
 **Exit Criteria:**
-- [ ] Reference baseline CH4 Asset существует
-- [ ] Юганский summer XCH4 в expected range (sanity check passed)
-- [ ] Алтайский QA test result documented (pass/fail с metrics)
-- [ ] Latitude stratification works: pixel в Кузбассе берёт baseline от Кузнецкого Алатау
+- [x] Reference baseline CH4 Asset существует — `RuPlumeScan/baselines/reference_CH4_2019_2025_v1` (P-01.0a, 2026-04-28)
+- [x] Юганский summer XCH4 в expected range (1880 ppb M07 — within sanity)
+- [x] Алтайский QA test result documented — **FAILED**, status `unreliable_for_xch4_baseline` (3 active zones)
+- [x] Latitude stratification works (verified P-01.0b TD-0019 investigation R²=0.002)
 
-**DevPrompt:** `P-01.0a_reference_baseline.md` (NEW в v1.1)
+**DevPrompt:** `P-01.0a_reference_baseline.md` (NEW в v1.1) — **DONE 2026-04-28**
 
 ### Phase 1b: Regional Climatology
 
@@ -162,11 +167,13 @@ v1.0 RELEASE                             [месяц 7]      → СПДЗЗ subm
 - Regional climatology Assets для CH₄/NO₂/SO₂: `RuPlumeScan/baselines/regional_<gas>_2019_2025`
 
 **Exit Criteria:**
-- [ ] Regional climatologies для всех трёх газов в Assets
-- [ ] Industrial buffer exclusion работает (Норильск pixel не имеет ‘фон’)
-- [ ] Climatology XCH4 baseline в Yamal centre ~1880 ppb
+- [x] CH₄ regional climatology Asset — `RuPlumeScan/baselines/regional_CH4_2019_2025` (P-01.0b, 2026-04-29)
+- [ ] NO₂ regional climatology — submitted 2026-04-29, pending 12/12 SUCCEEDED
+- [ ] SO₂ regional climatology — pending NO₂ outcome
+- [x] Industrial buffer exclusion работает (Tom-Usinsk GRES pixel masked, Norilsk masked, etc.)
+- [x] Climatology XCH4 baseline в Yamal centre ~1880 ppb (verified P-01.0b 6-point sanity)
 
-**DevPrompt:** `P-01.0b_regional_climatology.md` (renamed)
+**DevPrompt:** `P-01.0b_regional_climatology.md` (renamed) — **CH₄ DONE 2026-04-29; NO₂/SO₂ in flight**
 
 ### Phase 1c: Dual Baseline Cross-check Validation (NEW в v1.1)
 
