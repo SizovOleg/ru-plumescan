@@ -83,14 +83,71 @@ validation evidence что constant L=1.32 занижает accuracy.
 
 ---
 
-## TD-0008 — Refactor build_zone_baseline_single_month memory footprint (Q-mid months) **[PRIORITY HIGH]**
+## TD-0017 NEW — Transboundary transport contamination (Krasnoyarsk → western AOI)
+
+- **Origin:** P-01.0b CR review CLAIM 3 fix 2026-04-29
+- **Status:** documented caveat
+- **Observation:** Krasnoyarsk industrial cluster (Krasnoyarskaya GRES-2 1250 MW
+  + 3 более) в 90-95°E band added to `industrial/source_points` v2 (CLAIM 3
+  fix). Industrial mask now excludes these points. Но при favorable easterly
+  winds — CH₄/SO₂/NO₂ от этих sources может transport westward в KhMAO/Yamal
+  и appear как increased baseline на pixels NOT covered industrial buffer.
+- **Trigger:** Phase 2A detection sensitivity test — investigate
+  false-positive rate в western AOI parts при detection runs covering periods
+  с predominantly easterly transport.
+- **Effort:** 2-3 days (HYSPLIT back-trajectory analysis или ERA5 wind
+  climatology correlation).
+
+---
+
+## TD-0018 NEW — Kuzbass detection caveat (mask gap pre-fix + low Kuz-Alatau counts)
+
+- **Origin:** P-01.0b CR review CLAIM 3 + MC-2026-04-29-I 2026-04-29
+- **Status:** **HIGH severity для Phase 2A в Kuzbass region**
+- **Observation:** Primary CH₄ detection target region (regression baseline
+  Кузбасс 2022-09-20 per CLAUDE §5.1) has compounded uncertainty:
+  - **Industrial mask gap pre-fix:** 4 major Kuzbass plants (Tom-Usinsk,
+    Kuznetsk TES, Novo-Kemerovo, Kemerovo) missed в P-01.0b CH₄ regional
+    baseline. Pixels near these plants могут содержать residual industrial
+    signal в regional baseline. Mask fixed в same PR, но CH₄ regional Asset
+    built на pre-fix mask (preserved per Option E).
+  - **Reference baseline reliability:** Kuznetsky Alatau (lat 53-57°N,
+    Kuzbass primary reference) imeет low TROPOMI counts 60-140/month vs
+    5000+ для lowland zones (P-01.0a TD-0010). Mountain cloud cover + SWIR
+    challenges.
+  - **Cross-check unreliable:** Both baselines have elevated uncertainty
+    в этой region. Dual baseline architecture's «one robust baseline»
+    assumption not satisfied.
+- **Phase 2A mitigation requirements:**
+  - **Stricter z_min threshold** для Kuzbass-region plumes: z_min=4.0
+    (vs default 3.0). Reduces false positive rate but also reduces sensitivity.
+  - **Manual review trigger:** events с `nearest_source_id=null` near
+    coordinate (86-88°E, 53-55°N) — likely missed Kuzbass industrial
+    source. Compare с updated `industrial/source_points` v2 (post-fix).
+  - **Document Phase 2A detection limit:** Kuzbass ~14 ppb sensitivity vs
+    Yamal/Khanty ~30+ ppb sensitivity (proxy estimate).
+- **Trigger:** Phase 2A CH₄ detection run on regression baseline Кузбасс
+  2022-09-20.
+- **Effort:** apply mitigation в Phase 2A DevPrompt (15 min config), then
+  validate с regression test.
+
+---
+
+## TD-0008 — Refactor build_zone_baseline_single_month memory footprint (Q-mid months) **[RESOLVED 2026-04-29]**
 
 - **Origin:** P-01.0a Phase A diagnostics (commit `<P-01.0a merge SHA>`, 2026-04-28)
 - **Owner:** Claude (исполняющий) при triggering
-- **Status:** **PRIORITY HIGH (escalated from `deferred`)** — после P-01.0a confirmed
-  pattern не fix-able by simple sleep, и Phase 2A pipeline зависит от valid
-  baselines для biologically active transition months (M05 Май, M08 Август,
-  M11 Ноябрь — wetland onset, peak emission, freeze-up).
+- **Status (2026-04-29): RESOLVED.** Option C verified в P-01.0b CH₄ run —
+  все 12 monthly tasks COMPLETED including Q-mid M02/M05/M08/M11. 12 separate
+  batch tasks (each own server-side memory allocation) bypass cumulative
+  graph memory limit single-iteration approach. Hypothesis confirmed.
+- **Outcome:** A (full success). См. OpenSpec MC-D + retroactive run log
+  `default_2019_2025_d2e6362c` в `logs/runs.jsonl`.
+- **Apply pattern для:** future regional baseline NO₂/SO₂ runs (built into
+  build_regional_climatology.py orchestrator). И P-01.0a reference baseline
+  if rebuild needed.
+
+### Original concern (kept для historical record)
 - **Trigger:** **BLOCKS Phase 2A** (CH4 detection) — must mitigate перед production
   detection runs. Любой из:
   - Refactor compute (preferred, 1 day work)

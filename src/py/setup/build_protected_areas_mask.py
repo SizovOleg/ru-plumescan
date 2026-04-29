@@ -118,9 +118,14 @@ ZONE_METADATA: dict[str, dict[str, Any]] = {
         "natural_zone": "high_mountain_with_alpine",
         "latitude_band_min": 51.0,
         "latitude_band_max": 54.0,
-        # Initial; при passing QA test (Algorithm §11.4) пользователь обновит на 'active'.
-        # Использование без QA test — нарушение DNA §2.1 запрет 16.
-        "quality_status": "optional_pending_quality",
+        # Status set per Algorithm v2.3 §11.4 QA test result 2026-04-28.
+        # Initial value был "optional_pending_quality"; QA test FAIL
+        # (abs_diff_winter=34.86 ppb >30, cycle_diff=34.25 ppb >20)
+        # — high-altitude biome above winter PBL inversion.
+        # См. docs/p-01.0a_altaisky_qa_result.json + Algorithm.md §11.4.1
+        # worked example. Per DNA §2.1 запрет 16 — Алтайский excluded
+        # from production reference baseline.
+        "quality_status": "unreliable_for_xch4_baseline",
         "established_year": 1932,
         "iucn_category": "Ia",
         "official_url": "https://www.altzapovednik.ru",

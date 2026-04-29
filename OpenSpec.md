@@ -584,6 +584,148 @@ existing architectural decisions. Документируются здесь дл
   4 months fail. Phase B Export batch task TBD (FAIL on first attempt с
   null-constant error — fixed via valid-zones filter + `--phase-b-only` flag).
 
+### MC-2026-04-29-D — CLAIM 5 QA filter ordering bug remediation (P-01.0b)
+
+- Date: 2026-04-29
+- Initiator: Researcher (independent CR review)
+- Type: Code refactor + caveat documentation
+- Affected code: `src/py/setup/build_regional_climatology.py`,
+  `src/js/modules/regional_climatology.js`
+- Reason: Pipeline вызывает `.select(target_band)` BEFORE QA filter →
+  cloud_fraction band lost → cloud filter never applied. Diagnostic test
+  confirmed: NO₂ L3 имеет `cloud_fraction` band before .select(), но
+  отсутствует after. Same SO₂.
+- Severity (gas-specific):
+  - **CH₄: functionally inert.** L3 v02.04 OFFL upstream-filtered
+    (Lorente 2021); only `physical_range` (1700-2200 ppb) configured,
+    targets target band which IS available after select. CH₄ regional
+    baseline scientifically valid.
+  - **NO₂: ACTIVE.** cloud_fraction filter (cf<0.3) skipped → cloudy
+    pixels included в baseline → contaminated.
+  - **SO₂: ACTIVE.** Same.
+  - **P-01.0a Reference Baseline: NOT affected.** Different code path —
+    `build_reference_baseline_ch4.py` doesn't call `apply_qa_filter`.
+- Decision:
+  - CH₄ regional Asset KEPT (built на pre-fix code; bug inert).
+    Asset metadata `qa_filter_caveat` documents architectural bug + why
+    inert для CH₄.
+  - Pipeline FIXED для NO₂/SO₂: multi-band select pattern. Per-gas
+    `qa_bands` list explicitly enumerates auxiliary bands needed для
+    filter. Drop QA after filter via final `.select([target_band])`.
+- Verification: NO₂/SO₂ runs (deferred) will use fixed pipeline; pre-flight
+  test через bandNames() print check.
+
+### MC-2026-04-29-E — CLAIM 2 Altaisky local source-of-truth conflict fix
+
+- Date: 2026-04-29
+- Type: Data correction (3 stale files)
+- Affected files:
+  - `data/protected_areas/metadata.json` (Altaisky quality_status)
+  - `data/protected_areas/altaisky.geojson` (Feature properties)
+  - `src/py/setup/build_protected_areas_mask.py` ZONE_METADATA dict line 123
+- Reason: Algorithm v2.3 §11.4 QA test FAIL 2026-04-28 set Altaisky
+  status="unreliable_for_xch4_baseline" в GEE Asset, но 3 local sources
+  оставались с initial "optional_pending_quality". Re-upload через
+  `build_protected_areas_mask.py` would have reverted Asset to stale value.
+- Decision: All 3 sources updated to "unreliable_for_xch4_baseline".
+  Each source now includes `quality_status_history` entry pair documenting
+  initial state + QA result + reasoning (winter abs_diff +34.86 ppb,
+  cycle_diff +14.25 ppb, high-altitude biome above winter PBL).
+- Verification: live Asset = unreliable_for_xch4_baseline ✓; all 3 local
+  sources updated ✓; reproducibility safe.
+
+### MC-2026-04-29-F — CLAIM 3 canonical AOI fix + 18 GPPD plants добавлено
+
+- Date: 2026-04-29
+- Type: AOI standardization + asset rebuild
+- Affected code: `build_industrial_proxy.py`, `build_viirs_proxy.py`
+  (AOI 60-55-90-75 → canonical 60-50-95-75)
+- Affected GEE Assets (rebuilt):
+  - `industrial/source_points`: 513 → **531 features** (+18 GPPD plants)
+  - `industrial/proxy_mask`: rebuilt with new sources
+  - `industrial/proxy_mask_buffered_30km`: rebuilt
+- Reason: 7 setup scripts had divergent AOI bbox. Industrial proxy + VIIRS
+  scripts на narrow (60-55-90-75); mask + baseline scripts на wider
+  (60-50-95-75). Diagnostic выявил **18 GPPD plants excluded** включая
+  4 critical Kuzbass TPPs (Tom-Usinsk GRES 1345 MW, Kuznetsk TES,
+  Novo-Kemerovo CHP, Kemerovo GRES) и Krasnoyarsk-region cluster (90-95°E).
+- Verification (CLAIM 3 fix verified):
+  - Tom-Usinsk GRES (87.59, 53.78): proxy_mask=1, buffered=0 (masked) ✓
+  - Kuznetsk TES (87.11, 53.76): masked ✓
+  - Novo-Kemerovo CHP (86.00, 55.35): masked ✓
+  - Kemerovo GRES (86.07, 55.37): masked ✓
+- CH₄ regional Asset built на pre-fix mask — Kuzbass gap documented в
+  Asset `industrial_mask_caveat` metadata + KNOWN_TODOS TD-0018.
+
+### MC-2026-04-29-G — CLAIM 4 schema v1.0 → v1.1 migration
+
+- Date: 2026-04-29
+- Type: Common Plume Schema breaking change (DNA §2.3 mutation OK because
+  Algorithm v2.3 already specifies v1.1)
+- Affected code:
+  - `src/py/rca/common_schema.py` (SCHEMA_VERSION + 5 fields)
+  - `src/js/modules/schema.js` (SCHEMA_VERSION + ALL_FIELDS + missingRequired
+    server-side bug fix)
+  - `src/py/tests/test_common_schema.py` (3 new tests, total 33/33 pass)
+- v1.1 new fields per Algorithm v2.3 §2.1 + DNA v2.2 §4.2:
+  - `delta_vs_regional_climatology` (float | null)
+  - `delta_vs_reference_baseline` (float | null)
+  - `baseline_consistency_flag` (bool | null)
+  - `matched_inside_reference_zone` (bool | null)
+  - `nearest_reference_zone` (string | null)
+- JS bug fix: pre-fix `tagFeatureValidity()` server-side missingRequired
+  filter incorrectly used `ee.List(REQUIRED_FIELDS).filter(notNull)` —
+  filtered constants instead of properties. Post-fix: `ee.List.iterate()`
+  over REQUIRED_FIELDS, checks `props.get(field)` for null. Same fix для
+  REQUIRED_FOR_OURS provenance check.
+- Verification: 33/33 pytest pass (3 new — fields present, fields optional,
+  v1.0 input rejected).
+
+### MC-2026-04-29-H — CLAIM 6 provenance helpers + logs/runs.jsonl
+
+- Date: 2026-04-29
+- Type: New module `src/py/rca/provenance.py` + `logs/runs.jsonl` initialization
+- Affected code:
+  - `src/py/rca/provenance.py` NEW: `compute_provenance(config, period)`,
+    `compute_params_hash()`, `write_run_log()`, `read_run_log()`.
+  - `logs/runs.jsonl` NEW: append-only JSONL, retroactively populated
+    с P-01.0a + P-01.0b CH₄ runs.
+- Reason: DNA §2.1 запрет 12 «Не выдавать Run без полного config snapshot».
+  Pre-fix: Asset metadata had partial info (algorithm_version, build_date)
+  but missing config_id/params_hash/run_id. No logs/runs.jsonl.
+- Implementation:
+  - `compute_params_hash(config)` — SHA-256 sorted-keys JSON serialization,
+    deterministic, same config → same hash.
+  - `compute_provenance(config, period)` — returns
+    `{config_id, params_hash, run_id}`. run_id format
+    `<config_id>_<period>_<sha8>`.
+  - `write_run_log(...)` — append JSONL entry to `logs/runs.jsonl` (anchored
+    to repo root, не cwd-dependent).
+- Retroactive entries created:
+  - `default_2019_2025_v1_1a89d4f6` — reference_CH4_2019_2025_v1 (P-01.0a)
+  - `default_2019_2025_d2e6362c` — regional_CH4_2019_2025 (P-01.0b)
+- CH₄ regional Asset metadata also includes `config_id`, `params_hash`,
+  `run_id` direct в Image properties (verified post-build).
+
+### MC-2026-04-29-I — Industrial mask completeness vs reference reliability tradeoff
+
+- Date: 2026-04-29
+- Type: Architectural caveat documentation (per Option E rationale)
+- Affected document: KNOWN_TODOS.md (TD-0018 detailed)
+- Reason: Per researcher Option E rationale: «Architecture mitigation
+  (dual baseline) valid only when at least one baseline robust». For
+  Kuzbass region:
+  - Reference baseline (Kuznetsky Alatau, lat 53-57°N): low counts
+    60-140/month → **higher uncertainty**
+  - Regional baseline pre-fix: missing 4 major Kuzbass plants → **contamination**
+  - Cross-check: **unreliable signal** в этой specific region
+- Decision: Phase 2A detection в Kuzbass (lat 53-55°N, lon 86-88°E) requires:
+  - Stricter detection threshold (z_min=4.0 vs default 3.0) per
+    DevPrompt P-01.0b §5
+  - Manual review для events `nearest_source_id=null` near (86-88°E, 53-55°N)
+- Architectural learning: dual baseline architecture not auto-robust в all
+  regions; needs per-region reliability assessment.
+
 ### MC-2026-04-28-C — Altaisky exclusion rationale documented (P-01.0a)
 
 - Date: 2026-04-28

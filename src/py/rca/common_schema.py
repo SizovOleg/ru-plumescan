@@ -42,8 +42,24 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 # Константы Schema                                                            #
 # --------------------------------------------------------------------------- #
 
-SCHEMA_VERSION: str = "1.0"
-"""Версия Common Plume Schema. Изменение — breaking change (DNA §2.3)."""
+SCHEMA_VERSION: str = "1.1"
+"""Версия Common Plume Schema.
+
+v1.0 → v1.1 (2026-04-29): добавлены 5 dual-baseline-related полей per
+Algorithm v2.3 §2.1 + DNA v2.2 §4.2 ML-readiness slots:
+  * `delta_vs_regional_climatology` — anomaly от regional baseline
+  * `delta_vs_reference_baseline` — anomaly от reference baseline (primary
+    в dual baseline architecture)
+  * `matched_inside_reference_zone` — bool, automatic false-positive flag
+    для events detected внутри protected zone (industrial activity там
+    запрещена законом)
+  * `baseline_consistency_flag` — true когда reference и regional baselines
+    agree within consistency_tolerance_ppb=30
+  * `nearest_reference_zone` — zone_id ближайшего reference zone (для
+    diagnostic — какой Reference Clean Zone provides baseline для pixel)
+
+Изменение schema — breaking change per DNA §2.3.
+"""
 
 GAS_TYPES: tuple[str, ...] = ("CH4", "NO2", "SO2")
 
@@ -234,6 +250,34 @@ class PlumeEvent(BaseModel):
     )
     qa_flags: str | None = Field(
         None, description="Comma-separated flags (e.g. 'low_wind,diffuse,snow_edge')."
+    )
+
+    # ---- Dual baseline anomaly fields (NEW в v1.1, Algorithm v2.3 §2.1) --
+    delta_vs_regional_climatology: float | None = Field(
+        None,
+        description="Anomaly vs regional climatology baseline (industrial buffer "
+        "exclusion). Algorithm §3.4.3 secondary baseline.",
+    )
+    delta_vs_reference_baseline: float | None = Field(
+        None,
+        description="Anomaly vs reference baseline (positive-space, anchored "
+        "в zapovedniks). Algorithm §3.4.3 primary baseline.",
+    )
+    baseline_consistency_flag: bool | None = Field(
+        None,
+        description="True если |reference - regional| < consistency_tolerance_ppb "
+        "(default 30). False сигнализирует о возможной contamination в regional.",
+    )
+    matched_inside_reference_zone: bool | None = Field(
+        None,
+        description="True если pixel внутри boundary одного из active Reference "
+        "Clean Zones. Automatic false-positive flag (industrial activity внутри "
+        "protected zones запрещена федеральным законом).",
+    )
+    nearest_reference_zone: str | None = Field(
+        None,
+        description="zone_id ближайшего reference zone (diagnostic — какая zone "
+        "provides baseline через latitude stratification, Algorithm §11.3 Step 4).",
     )
 
     # ---- Cross-source agreement (Comparison Engine fills these) ----------
