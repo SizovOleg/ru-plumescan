@@ -1,0 +1,98 @@
+{
+  "bands": {
+    "NO2_L3_OFFL": [
+      "NO2_column_number_density",
+      "tropospheric_NO2_column_number_density",
+      "stratospheric_NO2_column_number_density",
+      "NO2_slant_column_number_density",
+      "tropopause_pressure",
+      "absorbing_aerosol_index",
+      "cloud_fraction",
+      "sensor_altitude",
+      "sensor_azimuth_angle",
+      "sensor_zenith_angle",
+      "solar_azimuth_angle",
+      "solar_zenith_angle"
+    ],
+    "SO2_L3_OFFL": [
+      "SO2_column_number_density",
+      "SO2_column_number_density_amf",
+      "SO2_slant_column_number_density",
+      "absorbing_aerosol_index",
+      "cloud_fraction",
+      "sensor_azimuth_angle",
+      "sensor_zenith_angle",
+      "solar_azimuth_angle",
+      "solar_zenith_angle",
+      "SO2_column_number_density_15km"
+    ]
+  },
+  "cross_check": [
+    {
+      "point": "Yugansky centroid",
+      "lat": 60.5,
+      "lon": 74.5,
+      "ref_M07": 1880.380176797695,
+      "reg_M07": null,
+      "ref_M10": 1892.0459355912783,
+      "reg_M10": null,
+      "delta_M07": null,
+      "delta_M10": null
+    },
+    {
+      "point": "Verkhne-Tazovsky",
+      "lat": 63.5,
+      "lon": 84.0,
+      "ref_M07": 1863.3537136585912,
+      "reg_M07": 1845.4435124101783,
+      "ref_M10": 1893.9570785099377,
+      "reg_M10": 1884.212995688223,
+      "delta_M07": -17.91,
+      "delta_M10": -9.744
+    },
+    {
+      "point": "Kuznetsky Alatau",
+      "lat": 54.5,
+      "lon": 88.0,
+      "ref_M07": 1845.5267091943747,
+      "reg_M07": 1867.0881909060831,
+      "ref_M10": 1872.2182448471658,
+      "reg_M10": 1873.2871849927435,
+      "delta_M07": 21.561,
+      "delta_M10": 1.069
+    },
+    {
+      "point": "Mid-Yamal clean",
+      "lat": 67.0,
+      "lon": 72.0,
+      "ref_M07": 1863.3537136585912,
+      "reg_M07": 1889.3503818919214,
+      "ref_M10": 1893.9570785099377,
+      "reg_M10": 1886.119821716904,
+      "delta_M07": 25.997,
+      "delta_M10": -7.837
+    },
+    {
+      "point": "Norilsk Nadezhdinsky",
+      "lat": 69.32,
+      "lon": 87.93,
+      "ref_M07": 1863.3537136585912,
+      "reg_M07": null,
+      "ref_M10": 1893.9570785099377,
+      "reg_M10": null,
+      "delta_M07": null,
+      "delta_M10": null
+    },
+    {
+      "point": "Bovanenkovo proxy",
+      "lat": 70.5,
+      "lon": 70.5,
+      "ref_M07": 1863.3537136585912,
+      "reg_M07": 1879.7893706864877,
+      "ref_M10": 1893.9570785099377,
+      "reg_M10": 1880.1911031254485,
+      "delta_M07": 16.436,
+      "delta_M10": -13.766
+    }
+  ]
+}
