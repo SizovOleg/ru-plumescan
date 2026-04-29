@@ -133,6 +133,64 @@ validation evidence что constant L=1.32 занижает accuracy.
 
 ---
 
+## TD-0019 — Reference baseline latitude-stratification: extrapolation quantitative impact **[RESOLVED 2026-04-29]**
+
+- **Origin:** P-01.0b 6-point Ref vs Regional cross-check + researcher
+  investigation request 2026-04-29.
+- **Status (2026-04-29): RESOLVED — methodology bounded, distance not the
+  driver.**
+- **Trigger observation:** P-01.0b cross-check spread 38 ppb (-17.91 to
+  +21.56) для non-industrial points — beyond `consistency_tolerance_ppb=30`.
+  Hypothesis: latitude-only zone stratification (centroids 54.5/60.5/63.5°N,
+  no longitude weight) extrapolates baselines unreliably на distant points.
+- **Investigation deliverables:** `docs/p-01.0b_extrapolation_investigation/`
+  - `01_zone_map.png` — zone assignment + lat-distance heatmap
+  - `02_delta_vs_distance.png` — Δ scatter с linear fit (n=104 random clean
+    points, M07)
+  - `03_latitude_transect.png` — ref vs reg at lon=75°E
+  - `REPORT.md` — full analysis
+  - `stats.json` — raw numerical
+- **Findings:**
+  - **R² = 0.0023** (|Δ| vs lat_dist_km, n=104, p=0.629). NOT significant.
+  - Slope -0.003 ppb/km — distance к centroid не predicts \|Δ\|.
+  - \|Δ\|: max 54, mean 19.8, median 15.8 ppb. Substantial \|Δ\| exists
+    но distance не explains it.
+  - Visible step-change discretization artifact at zone boundaries
+    (57°N, 62°N) — produces local Δ even for points close to centroid.
+  - Zone 4 article t1 comparison: ref_mean=1873 vs article=1854 (Δ=+19).
+    Plausible — period + biome (whole zapoved vs wetland-only) mismatch.
+- **Verdict per researcher's pre-stated criterion (R² < 0.2):** PROCEED
+  normally. \|Δ\| reflects biome/period differences, NOT extrapolation
+  artifact.
+- **Phase 2A guidance produced:**
+  - Phase 2A `consistency_flag=false` triggers should record `lat_dist_km`
+    per candidate as confidence-modifier — NOT a hard fallback rule.
+  - Step-change boundaries (~57°N, ~62°N at lon=75°E) могут produce
+    spurious cross-check disagreements; document для Phase 1c.
+- **Future improvement (deferred, NOT blocker):** distance-weighted blend
+  между nearest-2 zones смягчил бы step changes. Candidate для potential
+  CHANGE-0018 после Phase 1c full cross-check map.
+
+---
+
+## TD-0020 — Bovanenkovo test point coordinate error in cross-check labels
+
+- **Origin:** P-01.0b validation report point 6 misnomer 2026-04-29
+- **Status:** documented, low priority
+- **Observation:** validation report labels point 6 «Bovanenkovo proxy»
+  (70.5°E, 70.5°N), но actual Bovanenkovo NGKM centroid находится
+  ≈(68.4°E, 70.4°N) — ~80 km west. Sampled coord falls в less-instrumented
+  Yamal zone, NOT в proper Bovanenkovo gas field.
+- **Impact:** misleading mask-coverage claim в PR #3 description and
+  earlier P-01.0b summary. Real Bovanenkovo would be in 30 km industrial
+  buffer (after CLAIM 3 fix), но sampled point may not be.
+- **Action item:** при next sanity validation, replace point 6 с actual
+  Bovanenkovo (68.4, 70.4) AND add fresh point at (70.5, 70.5) под
+  honest label "Mid-Yamal east clean".
+- **Effort:** 5 min config update + script re-run.
+
+---
+
 ## TD-0008 — Refactor build_zone_baseline_single_month memory footprint (Q-mid months) **[RESOLVED 2026-04-29]**
 
 - **Origin:** P-01.0a Phase A diagnostics (commit `<P-01.0a merge SHA>`, 2026-04-28)
