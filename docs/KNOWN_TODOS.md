@@ -11,6 +11,98 @@ deferrals**, не для architectural changes.
 
 ---
 
+## TD-0023 NEW — Cities-vs-industrial scope inflation (NO₂/SO₂ baseline) **[HIGH PRIORITY]**
+
+- **Origin:** P-01.0b Phase 1b closure sanity validation 2026-04-30 — Tyumen,
+  Surgut, Novokuznetsk all masked в NO₂/SO₂ regional baselines via 30 km
+  buffer of collocated TPP/GRES industrial proxy points.
+- **Status:** OPEN HIGH — Phase 2A NO₂/SO₂ detection blocker; Phase 1c
+  (CH₄-only) NOT blocked.
+- **Issue:** Major cities have anthropogenic NO₂ contamination от:
+  - Transport (автомобили, public transit)
+  - Heating systems
+  - Construction, urban activity
+  - **Not just collocated TPPs**
+
+  Current 30 km industrial buffer effectively masks entire urban regions when
+  a TPP is collocated. Consequences:
+  - Lose detection capability в these regions для Phase 2A (~1.5M residents
+    в excluded urban areas)
+  - Cannot validate против CAMS / IMEO catalogs (which may include urban events)
+  - Tool-paper claim "exclude industrial sources" inaccurate — actually
+    excludes urban regions
+- **Architectural decision needed (Phase 2A NO₂ design):**
+  - **(a)** reduce buffer to 15-20 km для collocated TPPs (less aggressive)
+  - **(b)** add urban polygons explicitly excluded from baseline (separate
+    `urban_mask` layer)
+  - **(c)** build separate urban baseline (most architecturally clean)
+- **Trigger:** Phase 2A NO₂/SO₂ design DevPrompt. Requires architectural
+  discussion с researcher.
+- **Effort:** 2-3 days (option b: city polygon ingestion + 15 km baseline
+  rebuild) до 1-2 weeks (option c: separate baseline architecture).
+- **Phase 1c safety:** не блокирует (CH₄-only baseline cross-check).
+
+---
+
+## TD-0024 NEW — Provenance hash consistency bug **[HIGH PRIORITY]**
+
+- **Origin:** P-01.0b Phase 1b closure 2026-04-30 — SO₂ STARTED log used
+  different params_hash than SUCCEEDED log + asset metadata.
+- **Status:** OPEN HIGH — Phase 2A blocker (detection events need
+  bit-identical reproducibility).
+- **Audit results (2026-04-30, all 4 P-01.0a/0b runs):**
+
+  | Run | log STARTED | log SUCCEEDED | asset.params_hash | Verdict |
+  |-----|-------------|---------------|-------------------|---------|
+  | CH₄ reference v1 (P-01.0a) | (none — retroactive) | `1a89d4f6` | **MISSING** | INCOMPLETE — asset has no params_hash property at all |
+  | CH₄ regional (P-01.0b) | (none — retroactive) | `d2e6362c` | `c8b6e97f` | MISMATCH — log vs asset |
+  | NO₂ regional (P-01.0b) | `7c2f8b2b` | `7c2f8b2b` | `7c2f8b2b` | OK consistent |
+  | SO₂ regional (P-01.0b) | `40f04025` | `f669e1c8` | `f669e1c8` | MISMATCH — STARTED vs SUCCEEDED+asset |
+
+- **Diagnosis:** issue is **partially systemic**. 3 distinct failure modes:
+  1. **CH₄ reference v1**: asset built before provenance helpers existed
+     (P-01.0a pre-CR review); has algorithm_version but не params_hash/run_id
+  2. **CH₄ regional**: retroactive log entry used config dict different
+     from build-time config that landed на asset properties
+  3. **SO₂ regional**: STARTED log computed provenance from config dict
+     that differed slightly from SUCCEEDED log canonical config
+
+- **Root cause:** params_hash computed multiple times in different code paths
+  с config dicts assembled inconsistently. Не enforced как single
+  immutable reference.
+
+- **Fix design (Phase 2A pre-implementation):**
+  - Compute `prov = compute_provenance(config)` ONCE at process start
+  - Pass `prov` immutably к all logging + asset metadata setters
+  - Add unit test: assert STARTED.params_hash == SUCCEEDED.params_hash for
+    all entries with matching run_id base
+  - For asset metadata: setAssetProperties immediately after Export task
+    submit (not after combine, where config could drift)
+  - Audit script `tools/audit_provenance_consistency.py` — runs across
+    `logs/runs.jsonl` + asset properties, flags mismatches
+
+- **Retroactive remediation (NOT done — would rewrite history):**
+  - Could update CH₄ reference v1 asset to add canonical params_hash
+    (1a89d4f6 from log)
+  - Could update CH₄ regional asset to use d2e6362c from log
+  - Could update SO₂ STARTED log entry (rewrite jsonl) to use f669e1c8
+  - **Decision:** documented as audit finding в TD-0024. Не silently change
+    historical artefacts. Phase 2A pre-implementation fix prevents recurrence
+    going forward.
+
+- **Trigger:** Phase 2A design DevPrompt — fix MUST be implemented before
+  detection events generate run records. Audit existing entries pre-launch.
+
+- **Effort:** 4-6 hours (fix in `provenance.py` + orchestrator integration +
+  audit script + unit tests).
+
+- **DNA §2.1 запрет 12 status:** formally satisfied для NO₂ (всё matches).
+  Formally satisfied для SO₂/CH₄ regional asset metadata. **Not satisfied
+  для CH₄ reference v1 asset** (no params_hash) — must fix during Phase 2A
+  preparation.
+
+---
+
 ## TD-0001 — VIIRS proxy comprehensive analysis
 
 - **Origin:** P-00.1 v2 ingestion (commit `<merge SHA>`, branch `p-00.1-industrial-and-reference`)
