@@ -240,7 +240,44 @@ validation evidence что constant L=1.32 занижает accuracy.
 
 ---
 
-## TD-0008 — Refactor build_zone_baseline_single_month memory footprint (Q-mid months) **[RESOLVED 2026-04-29]**
+## TD-0008 — Refactor build_zone_baseline_single_month memory footprint (Q-mid months) **[RESOLVED 2026-04-30 — cross-gas verified]**
+
+**Final outcome (2026-04-30):** Option C (12 separate batch tasks per gas) verified
+across **all 3 gases**:
+- CH₄ regional climatology 2026-04-29: 12/12 SUCCEEDED including Q-mid
+- NO₂ regional climatology 2026-04-30: 12/12 SUCCEEDED including Q-mid
+- SO₂ regional climatology 2026-04-30: 12/12 SUCCEEDED including Q-mid
+
+Pattern documented в `build_regional_climatology.py` orchestrator. Hypothesis
+empirically confirmed across 3 different gas pipelines + 3 different runs +
+36 separate batch tasks total. TD-0008 closed с high confidence. См.
+OpenSpec MC-2026-04-30-L.
+
+---
+
+## TD-0011 — Pre-computed mask Asset для NO₂/SO₂ optimization **[RESOLVED 2026-04-30]**
+
+**Outcome:** `RuPlumeScan/industrial/proxy_mask_buffered_30km` Asset successfully
+used for NO₂ + SO₂ regional climatology builds 2026-04-30. Saved ~1.5 hours
+compute per gas (3 hours total) via skip of inline `focal_max(15km)` operation.
+Pattern: `--use-prebuilt-mask` flag в orchestrator. См. MC-2026-04-30-J/K.
+
+---
+
+## TD-0012 — Mask consistency cross-gas verification **[RESOLVED 2026-04-30]**
+
+**Outcome:** Same `proxy_mask_buffered_30km` asset used uniformly across CH₄
+(post-build verification commit 589efaf), NO₂ (2026-04-30 closure), и SO₂
+(2026-04-30 closure). Industrial pixel masking verified consistent в 3-gas
+sanity tests:
+- Norilsk Nadezhdinsky: masked в всех 3 gases ✓
+- Tom-Usinsk GRES (Kuzbass): masked в NO₂ + SO₂ (CH₄ used pre-fix mask per
+  Option E rationale, см. TD-0018)
+- Yugansky reference centroid: masked (collocated с oil infrastructure) ✓
+
+---
+
+## TD-0008 archive note (kept для historical record)
 
 - **Origin:** P-01.0a Phase A diagnostics (commit `<P-01.0a merge SHA>`, 2026-04-28)
 - **Owner:** Claude (исполняющий) при triggering

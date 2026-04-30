@@ -584,6 +584,66 @@ existing architectural decisions. Документируются здесь дл
   4 months fail. Phase B Export batch task TBD (FAIL on first attempt с
   null-constant error — fixed via valid-zones filter + `--phase-b-only` flag).
 
+### MC-2026-04-30-J — NO₂ regional climatology completion (Phase 1b)
+
+- Date: 2026-04-30
+- Type: Phase 1b deliverable closure
+- Affected: `RuPlumeScan/baselines/regional_NO2_2019_2025` (live)
+- Outcome: **A — FULL SUCCESS, 12/12 monthly tasks SUCCEEDED, Option C verified**
+- Run: `default_2019_2025_7c2f8b2b` (params_hash matches STARTED → SUCCEEDED →
+  asset metadata)
+- Pipeline: multi-band-select `[tropospheric_NO2_column_number_density,
+  cloud_fraction]` → `cloud_fraction < 0.3` filter → reduce. Mask:
+  `proxy_mask_buffered_30km` (prebuilt, ~1.5 h saved).
+- Sanity validation:
+  - Norilsk Nadezhdinsky (industrial): masked ✓
+  - Tom-Usinsk GRES (Kuzbass post-fix mask test): masked ✓
+  - Tyumen / Surgut / Novokuznetsk (cities with collocated TPPs):
+    masked via 30 km buffer of nearby industrial proxy points ✓
+  - Clean Yamal vacuum (71°N, 73°E) M07 = 6.4×10⁻⁶ mol/m² < 5×10⁻⁵ threshold ✓
+- Asset metadata: 30 properties, full provenance triple, kuzbass_gap_caveat,
+  qa_filter_caveat, cities_collocated_caveat, phase_1b_closure_date.
+
+### MC-2026-04-30-K — SO₂ regional climatology completion (Phase 1b)
+
+- Date: 2026-04-30
+- Type: Phase 1b deliverable closure
+- Affected: `RuPlumeScan/baselines/regional_SO2_2019_2025` (live)
+- Outcome: **A — FULL SUCCESS, 12/12 monthly tasks SUCCEEDED**
+- Run: `default_2019_2025_f669e1c8` (canonical config). Note: SO₂ STARTED
+  log entry used `40f04025` hash (slightly different config dict at submission
+  time) — process improvement filed; final asset uses canonical hash.
+  DNA §2.1 запрет 12 satisfied (full provenance triple на final asset).
+- Pipeline: same multi-band-select pattern + negative_floor = -0.001 mol/m²
+  applied per DNA §2.1 запрет 7.
+- Sanity validation:
+  - Norilsk Nadezhdinsky (largest SO₂ source globally): masked ✓
+  - Norilsk Medny: masked ✓
+  - Clean Yamal vacuum M07 = 7.4×10⁻⁵ mol/m² (within [-1×10⁻³, 1×10⁻⁴] target) ✓
+  - Mid-Yamal east clean M07 = 4.5×10⁻⁵ mol/m² ✓
+  - Negative floor verification: `min(median_M01..M12) = -9.999×10⁻⁴ mol/m²`
+    (≥ -0.001 floor target) ✓
+- Asset metadata: 30 properties, full provenance, all closure caveats.
+
+### MC-2026-04-30-L — TD-0008 Option C cumulative verification (3 gases)
+
+- Date: 2026-04-30
+- Type: Cross-gas hypothesis confirmation
+- Affected document: `KNOWN_TODOS.md` (TD-0008 RESOLVED final)
+- Reason: TD-0008 (Q-mid M02/M05/M08/M11 single-iteration memory limit
+  pattern) hypothesis tested across all 3 gases в Phase 1b:
+  - CH₄ (P-01.0b 2026-04-29): 12/12 SUCCEEDED including Q-mid
+  - NO₂ (2026-04-30): 12/12 SUCCEEDED including Q-mid
+  - SO₂ (2026-04-30): 12/12 SUCCEEDED including Q-mid
+- Verdict: **Option C (12 separate batch tasks per gas) bypasses cumulative
+  graph memory limit reliably.** Hypothesis empirically confirmed across
+  3 different gas pipelines + 3 different month sets. TD-0008 RESOLVED with
+  high confidence. Pattern documented в `build_regional_climatology.py`
+  orchestrator для future regional baseline rebuilds.
+- Phase 1b status: **CLOSED.** Phase 1c (dual baseline cross-check
+  validation) ready: combines existing reference + regional CH₄ assets,
+  no new compute.
+
 ### MC-2026-04-29-D — CLAIM 5 QA filter ordering bug remediation (P-01.0b)
 
 - Date: 2026-04-29

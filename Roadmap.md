@@ -29,9 +29,12 @@
 - ✅ Архивированы baseline pc_test1_scan.js регрессии (Кузбасс 2022-09-20, Z=3.96)
 
 **В прогрессе:**
-- 🔄 Phase 1b NO₂/SO₂ regional climatology (CH₄ done; NO₂ submitted 2026-04-29, SO₂ pending NO₂ outcome)
+- 🔄 **Phase 1c** (dual baseline cross-check validation, no new compute — combines existing CH₄ reference + regional assets)
 
-**Готово (Phases 0 + 1a + 1b CH₄):**
+**Готово (Phases 0 + 1a + 1b ALL gases):**
+- ✅ **P-01.0b NO₂** — Regional NO₂ climatology live (`RuPlumeScan/baselines/regional_NO2_2019_2025`, 36 bands); Option C 12/12 SUCCEEDED 2026-04-30; sanity PASS
+- ✅ **P-01.0b SO₂** — Regional SO₂ climatology live (`RuPlumeScan/baselines/regional_SO2_2019_2025`, 36 bands, negative floor -0.001 mol/m² verified); Option C 12/12 SUCCEEDED 2026-04-30; sanity PASS
+- ✅ **TD-0008 RESOLVED cross-gas** — 36 batch tasks succeeded across 3 gases. См. MC-2026-04-30-L
 - ✅ **P-00.1** — industrial + protected areas reference (CHANGE-0017, AOI standardised, +18 GPPD post-CR)
 - ✅ **P-01.0a** — Reference baseline CH₄ live (`RuPlumeScan/baselines/reference_CH4_2019_2025_v1`); Алтайский QA test FAILED → unreliable_for_xch4_baseline; 3 active zones
 - ✅ **P-01.0b CH₄** — Regional CH₄ climatology live (`RuPlumeScan/baselines/regional_CH4_2019_2025`, 36 bands, industrial-buffer-30km, full provenance); Option C verified (12/12 SUCCEEDED)
@@ -168,12 +171,12 @@ v1.0 RELEASE                             [месяц 7]      → СПДЗЗ subm
 
 **Exit Criteria:**
 - [x] CH₄ regional climatology Asset — `RuPlumeScan/baselines/regional_CH4_2019_2025` (P-01.0b, 2026-04-29)
-- [ ] NO₂ regional climatology — submitted 2026-04-29, pending 12/12 SUCCEEDED
-- [ ] SO₂ regional climatology — pending NO₂ outcome
-- [x] Industrial buffer exclusion работает (Tom-Usinsk GRES pixel masked, Norilsk masked, etc.)
+- [x] NO₂ regional climatology Asset — `RuPlumeScan/baselines/regional_NO2_2019_2025` (2026-04-30, 12/12 SUCCEEDED, sanity PASS)
+- [x] SO₂ regional climatology Asset — `RuPlumeScan/baselines/regional_SO2_2019_2025` (2026-04-30, 12/12 SUCCEEDED, negative floor verified)
+- [x] Industrial buffer exclusion работает (Tom-Usinsk GRES, Norilsk Nadezhdinsky/Medny, Tyumen/Surgut/Novokuznetsk via collocated TPPs all masked)
 - [x] Climatology XCH4 baseline в Yamal centre ~1880 ppb (verified P-01.0b 6-point sanity)
 
-**DevPrompt:** `P-01.0b_regional_climatology.md` (renamed) — **CH₄ DONE 2026-04-29; NO₂/SO₂ in flight**
+**DevPrompt:** `P-01.0b_regional_climatology.md` (renamed) — **ALL 3 GASES DONE 2026-04-30; Phase 1b CLOSED**
 
 ### Phase 1c: Dual Baseline Cross-check Validation (NEW в v1.1)
 
