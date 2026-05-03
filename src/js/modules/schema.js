@@ -12,8 +12,14 @@
 
 /* eslint-disable no-undef */
 
-/** Текущая версия Common Plume Schema. См. DNA §2.3 — изменение = breaking change. */
-exports.SCHEMA_VERSION = '1.0';
+/**
+ * Текущая версия Common Plume Schema. См. DNA §2.3 — изменение = breaking change.
+ *
+ * v1.0 -> v1.1 (2026-04-29): added 5 dual-baseline fields per Algorithm v2.3 §2.1:
+ *   delta_vs_regional_climatology, delta_vs_reference_baseline,
+ *   baseline_consistency_flag, matched_inside_reference_zone, nearest_reference_zone.
+ */
+exports.SCHEMA_VERSION = '1.1';
 
 /** Допустимые газы. */
 exports.GAS_TYPES = ['CH4', 'NO2', 'SO2'];
@@ -94,6 +100,9 @@ var ALL_FIELDS = [
   'quantification_method', 'quantification_disclaimer',
   // Classification
   'class', 'confidence', 'confidence_score', 'qa_flags',
+  // Dual baseline (NEW в v1.1, Algorithm v2.3 §2.1)
+  'delta_vs_regional_climatology', 'delta_vs_reference_baseline',
+  'baseline_consistency_flag', 'matched_inside_reference_zone', 'nearest_reference_zone',
   // Cross-source agreement
   'matched_schuit2023', 'schuit_event_id',
   'matched_imeo_mars', 'imeo_event_id',
@@ -160,30 +169,92 @@ exports.requiredFields = function (sourceCatalog) {
  */
 exports.tagFeatureValidity = function (feature) {
   var props = feature.toDictionary();
-  var sourceCatalog = ee.String(props.get('source_catalog', 'unknown'));
+  var sourceCatalog = props.get('source_catalog');
 
-  // Базовый required check.
+  // Required fields presence — server-side: для каждого required field
+  // проверяем что property exists и не null. Bug pre-fix (CR review CLAIM
+  // от 2026-04-29): missingRequired использовал ee.List(constants).filter()
+  // который filter-ил список констант, не Feature properties. Now uses
+  // .keys()/.values() of toDictionary() для actual property check.
+  var propsKeys = props.keys();
   var missingRequired = ee.List(REQUIRED_FIELDS).filter(
-    ee.Filter.notNull(['item']).not()
+    ee.Filter.notNull(['item']).Not()
+  ).cat(
+    // Fields present в REQUIRED_FIELDS but NOT в feature properties keys
+    ee.List(REQUIRED_FIELDS).removeAll(propsKeys)
+  ).cat(
+    // Fields present в keys but null/undefined value
+    ee.List(REQUIRED_FIELDS).filter(
+      ee.Filter.lte('item', '0')  // dummy filter — replaced below
+    )
   );
+  // Build correct missing list using server-side iteration
+  missingRequired = ee.List(REQUIRED_FIELDS).iterate(
+    function (field, accum) {
+      var fieldStr = ee.String(field);
+      var hasKey = propsKeys.contains(fieldStr);
+      var notNull = ee.Algorithms.If(
+        hasKey,
+        ee.Algorithms.If(props.get(fieldStr), true, false),
+        false
+      );
+      return ee.Algorithms.If(
+        notNull,
+        accum,
+        ee.List(accum).add(fieldStr)
+      );
+    },
+    ee.List([])
+  );
+  missingRequired = ee.List(missingRequired);
 
-  // Простой client-side для known constants — server-side ee.Filter сложнее.
-  // Здесь — minimal server-side: проверяем только presence ключевых полей
-  // через .contains. Расширенная валидация — в client-side `validatePlumeEvent`.
+  // Provenance check для source_catalog="ours"
+  var oursMissingProvenance = ee.List(REQUIRED_FOR_OURS).iterate(
+    function (field, accum) {
+      var fieldStr = ee.String(field);
+      var hasKey = propsKeys.contains(fieldStr);
+      var notNull = ee.Algorithms.If(
+        hasKey,
+        ee.Algorithms.If(props.get(fieldStr), true, false),
+        false
+      );
+      return ee.Algorithms.If(
+        notNull,
+        accum,
+        ee.List(accum).add(fieldStr)
+      );
+    },
+    ee.List([])
+  );
+  oursMissingProvenance = ee.List(ee.Algorithms.If(
+    ee.String(sourceCatalog).equals('ours'),
+    oursMissingProvenance,
+    ee.List([])
+  ));
+
+  // Enum checks
   var hasGas = ee.List(exports.GAS_TYPES).contains(props.get('gas'));
-  var hasSource = ee.List(exports.SOURCE_CATALOGS).contains(props.get('source_catalog'));
+  var hasSource = ee.List(exports.SOURCE_CATALOGS).contains(sourceCatalog);
   var validSchema = ee.String(props.get('schema_version')).equals(exports.SCHEMA_VERSION);
 
-  var allOk = ee.Number(hasGas).and(hasSource).and(validSchema);
+  var noMissing = missingRequired.size().eq(0);
+  var noProvMissing = oursMissingProvenance.size().eq(0);
+
+  var allOk = ee.Number(hasGas).and(hasSource).and(validSchema)
+    .and(noMissing).and(noProvMissing);
 
   return feature.set({
     _schema_valid: allOk,
+    _schema_missing_required: missingRequired,
+    _schema_missing_provenance: oursMissingProvenance,
     _schema_errors: ee.Algorithms.If(
       allOk,
       '',
-      'gas/source_catalog/schema_version validation failed (client-side check для подробностей)'
+      ee.String('failed enum/schema_version check OR missing required: ')
+        .cat(missingRequired.join(','))
+        .cat(' OR missing provenance: ')
+        .cat(oursMissingProvenance.join(','))
     ),
-    _schema_missing_required: missingRequired,
   });
 };
 

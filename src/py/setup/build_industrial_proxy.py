@@ -39,8 +39,12 @@ import ee
 PROJECT_ID = "nodal-thunder-481307-u1"
 ASSET_ID = f"projects/{PROJECT_ID}/assets/RuPlumeScan/industrial/source_points"
 
-# AOI bbox: lon_min, lat_min, lon_max, lat_max (Western Siberia)
-AOI_BBOX = (60.0, 55.0, 90.0, 75.0)
+# AOI bbox: lon_min, lat_min, lon_max, lat_max (Western Siberia, canonical
+# per CLAIM 3 fix 2026-04-29). Earlier narrower (60-55-90-75) excluded 18
+# GPPD plants including 4 critical Kuzbass TPPs (Tom-Usinsk GRES, etc.) и
+# Krasnoyarsk-region cluster в 90-95°E. Aligned с baseline / mask scripts
+# для consistency. См. OpenSpec MC-F.
+AOI_BBOX = (60.0, 50.0, 95.0, 75.0)
 
 # GeoJSON inputs
 DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "industrial_sources"

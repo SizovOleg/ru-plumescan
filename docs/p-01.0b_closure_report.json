@@ -1,0 +1,87 @@
+{
+  "closed_at": "2026-04-30T16:46:45",
+  "phase": "P-01.0b",
+  "outcome": "AA — both NO2 + SO2 SUCCEEDED 12/12 (Outcome AA)",
+  "gases": {
+    "CH4": {
+      "asset_id": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/regional_CH4_2019_2025",
+      "n_bands": 36,
+      "n_properties": 28,
+      "config_id": "default",
+      "params_hash": "c8b6e97f23cf0f44b16c540d779b31be2a8bf8ff5c728d12181374fc0254499f",
+      "run_id": "default_2019_2025_c8b6e97f",
+      "schema_version": "1.1",
+      "algorithm_version": "2.3",
+      "rna_version": "1.2",
+      "phase_1b_closure_date": null,
+      "td_0008_outcome": null,
+      "has_kuzbass_caveat": false,
+      "has_qa_filter_caveat": true
+    },
+    "NO2": {
+      "asset_id": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/regional_NO2_2019_2025",
+      "n_bands": 36,
+      "n_properties": 30,
+      "config_id": "default",
+      "params_hash": "7c2f8b2ba08971d6b81d48171609e0c478f98383fe6b8f55e50f482598f6906f",
+      "run_id": "default_2019_2025_7c2f8b2b",
+      "schema_version": "1.1",
+      "algorithm_version": "2.3",
+      "rna_version": "1.2",
+      "phase_1b_closure_date": "2026-04-30",
+      "td_0008_outcome": "A_FULL_SUCCESS_OPTION_C_VERIFIED",
+      "has_kuzbass_caveat": true,
+      "has_qa_filter_caveat": true
+    },
+    "SO2": {
+      "asset_id": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/regional_SO2_2019_2025",
+      "n_bands": 36,
+      "n_properties": 30,
+      "config_id": "default",
+      "params_hash": "f669e1c8e5f4f2d6355a7f5b7c232421392567b7a67ae72df5beec01892891b6",
+      "run_id": "default_2019_2025_f669e1c8",
+      "schema_version": "1.1",
+      "algorithm_version": "2.3",
+      "rna_version": "1.2",
+      "phase_1b_closure_date": "2026-04-30",
+      "td_0008_outcome": "A_FULL_SUCCESS_OPTION_C_VERIFIED",
+      "has_kuzbass_caveat": true,
+      "has_qa_filter_caveat": true
+    }
+  },
+  "sanity_results": {
+    "NO2": {
+      "norilsk_nadezhdinsky_masked": true,
+      "tom_usinsk_gres_masked_kuzbass_fix_verified": true,
+      "tyumen_collocated_industry_masked": true,
+      "surgut_collocated_industry_masked": true,
+      "novokuznetsk_collocated_industry_masked": true,
+      "clean_yamal_M07_mol_per_m2": 6.396e-06,
+      "clean_yamal_below_5e-5_threshold": true
+    },
+    "SO2": {
+      "norilsk_nadezhdinsky_masked": true,
+      "norilsk_medny_masked": true,
+      "clean_yamal_M07_mol_per_m2": 7.364e-05,
+      "mid_yamal_east_M07_mol_per_m2": 4.456e-05,
+      "negative_floor_overall_min_mol_per_m2": -0.0009999246193274725,
+      "negative_floor_target_min": -0.001,
+      "negative_floor_within_target": true
+    },
+    "CH4": {
+      "note": "Already validated в P-01.0b commit 589efaf via 6-point cross-check + extrapolation investigation"
+    }
+  },
+  "provenance_note": "NO2 STARTED hash 7c2f8b2b matches SUCCEEDED + asset metadata. SO2 STARTED hash 40f04025 differs from final SUCCEEDED + asset hash f669e1c8 — the SO2 STARTED log entry used slightly different config dict при submission. Final asset metadata + closure SUCCEEDED entry use canonical config (full key set). Process improvement: future runs should compute provenance once before STARTED log + reuse через completion. DNA §2.1 запрет 12 satisfied: final asset has full provenance triple.",
+  "td_status_after_phase_1b": {
+    "TD-0008": "RESOLVED 2026-04-30 — Option C verified for ALL 3 gases (CH4: 12/12, NO2: 12/12, SO2: 12/12)",
+    "TD-0011": "RESOLVED — proxy_mask_buffered_30km used successfully for NO2 + SO2 (~1.5h saved per gas)",
+    "TD-0012": "mask consistency verified — same buffered mask used for all 3 gases",
+    "TD-0017": "OPEN — transboundary transport contamination, deferred Phase 2A",
+    "TD-0018": "OPEN HIGH — Kuzbass detection caveat, Phase 2A mitigation required",
+    "TD-0019": "RESOLVED 2026-04-29 — reference latitude-stratification extrapolation impact bounded",
+    "TD-0020": "OPEN low priority — Bovanenkovo coord error",
+    "TD-0021": "OPEN — zone-boundary detection sensitivity (CH4 Phase 2A)",
+    "TD-0022": "OPEN — article t1 full zonal-stats comparison (Phase 1c)"
+  }
+}

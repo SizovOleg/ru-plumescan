@@ -11,6 +11,98 @@ deferrals**, не для architectural changes.
 
 ---
 
+## TD-0023 NEW — Cities-vs-industrial scope inflation (NO₂/SO₂ baseline) **[HIGH PRIORITY]**
+
+- **Origin:** P-01.0b Phase 1b closure sanity validation 2026-04-30 — Tyumen,
+  Surgut, Novokuznetsk all masked в NO₂/SO₂ regional baselines via 30 km
+  buffer of collocated TPP/GRES industrial proxy points.
+- **Status:** OPEN HIGH — Phase 2A NO₂/SO₂ detection blocker; Phase 1c
+  (CH₄-only) NOT blocked.
+- **Issue:** Major cities have anthropogenic NO₂ contamination от:
+  - Transport (автомобили, public transit)
+  - Heating systems
+  - Construction, urban activity
+  - **Not just collocated TPPs**
+
+  Current 30 km industrial buffer effectively masks entire urban regions when
+  a TPP is collocated. Consequences:
+  - Lose detection capability в these regions для Phase 2A (~1.5M residents
+    в excluded urban areas)
+  - Cannot validate против CAMS / IMEO catalogs (which may include urban events)
+  - Tool-paper claim "exclude industrial sources" inaccurate — actually
+    excludes urban regions
+- **Architectural decision needed (Phase 2A NO₂ design):**
+  - **(a)** reduce buffer to 15-20 km для collocated TPPs (less aggressive)
+  - **(b)** add urban polygons explicitly excluded from baseline (separate
+    `urban_mask` layer)
+  - **(c)** build separate urban baseline (most architecturally clean)
+- **Trigger:** Phase 2A NO₂/SO₂ design DevPrompt. Requires architectural
+  discussion с researcher.
+- **Effort:** 2-3 days (option b: city polygon ingestion + 15 km baseline
+  rebuild) до 1-2 weeks (option c: separate baseline architecture).
+- **Phase 1c safety:** не блокирует (CH₄-only baseline cross-check).
+
+---
+
+## TD-0024 NEW — Provenance hash consistency bug **[HIGH PRIORITY]**
+
+- **Origin:** P-01.0b Phase 1b closure 2026-04-30 — SO₂ STARTED log used
+  different params_hash than SUCCEEDED log + asset metadata.
+- **Status:** OPEN HIGH — Phase 2A blocker (detection events need
+  bit-identical reproducibility).
+- **Audit results (2026-04-30, all 4 P-01.0a/0b runs):**
+
+  | Run | log STARTED | log SUCCEEDED | asset.params_hash | Verdict |
+  |-----|-------------|---------------|-------------------|---------|
+  | CH₄ reference v1 (P-01.0a) | (none — retroactive) | `1a89d4f6` | **MISSING** | INCOMPLETE — asset has no params_hash property at all |
+  | CH₄ regional (P-01.0b) | (none — retroactive) | `d2e6362c` | `c8b6e97f` | MISMATCH — log vs asset |
+  | NO₂ regional (P-01.0b) | `7c2f8b2b` | `7c2f8b2b` | `7c2f8b2b` | OK consistent |
+  | SO₂ regional (P-01.0b) | `40f04025` | `f669e1c8` | `f669e1c8` | MISMATCH — STARTED vs SUCCEEDED+asset |
+
+- **Diagnosis:** issue is **partially systemic**. 3 distinct failure modes:
+  1. **CH₄ reference v1**: asset built before provenance helpers existed
+     (P-01.0a pre-CR review); has algorithm_version but не params_hash/run_id
+  2. **CH₄ regional**: retroactive log entry used config dict different
+     from build-time config that landed на asset properties
+  3. **SO₂ regional**: STARTED log computed provenance from config dict
+     that differed slightly from SUCCEEDED log canonical config
+
+- **Root cause:** params_hash computed multiple times in different code paths
+  с config dicts assembled inconsistently. Не enforced как single
+  immutable reference.
+
+- **Fix design (Phase 2A pre-implementation):**
+  - Compute `prov = compute_provenance(config)` ONCE at process start
+  - Pass `prov` immutably к all logging + asset metadata setters
+  - Add unit test: assert STARTED.params_hash == SUCCEEDED.params_hash for
+    all entries with matching run_id base
+  - For asset metadata: setAssetProperties immediately after Export task
+    submit (not after combine, where config could drift)
+  - Audit script `tools/audit_provenance_consistency.py` — runs across
+    `logs/runs.jsonl` + asset properties, flags mismatches
+
+- **Retroactive remediation (NOT done — would rewrite history):**
+  - Could update CH₄ reference v1 asset to add canonical params_hash
+    (1a89d4f6 from log)
+  - Could update CH₄ regional asset to use d2e6362c from log
+  - Could update SO₂ STARTED log entry (rewrite jsonl) to use f669e1c8
+  - **Decision:** documented as audit finding в TD-0024. Не silently change
+    historical artefacts. Phase 2A pre-implementation fix prevents recurrence
+    going forward.
+
+- **Trigger:** Phase 2A design DevPrompt — fix MUST be implemented before
+  detection events generate run records. Audit existing entries pre-launch.
+
+- **Effort:** 4-6 hours (fix in `provenance.py` + orchestrator integration +
+  audit script + unit tests).
+
+- **DNA §2.1 запрет 12 status:** formally satisfied для NO₂ (всё matches).
+  Formally satisfied для SO₂/CH₄ regional asset metadata. **Not satisfied
+  для CH₄ reference v1 asset** (no params_hash) — must fix during Phase 2A
+  preparation.
+
+---
+
 ## TD-0001 — VIIRS proxy comprehensive analysis
 
 - **Origin:** P-00.1 v2 ingestion (commit `<merge SHA>`, branch `p-00.1-industrial-and-reference`)
@@ -83,14 +175,215 @@ validation evidence что constant L=1.32 занижает accuracy.
 
 ---
 
-## TD-0008 — Refactor build_zone_baseline_single_month memory footprint (Q-mid months) **[PRIORITY HIGH]**
+## TD-0017 NEW — Transboundary transport contamination (Krasnoyarsk → western AOI)
+
+- **Origin:** P-01.0b CR review CLAIM 3 fix 2026-04-29
+- **Status:** documented caveat
+- **Observation:** Krasnoyarsk industrial cluster (Krasnoyarskaya GRES-2 1250 MW
+  + 3 более) в 90-95°E band added to `industrial/source_points` v2 (CLAIM 3
+  fix). Industrial mask now excludes these points. Но при favorable easterly
+  winds — CH₄/SO₂/NO₂ от этих sources может transport westward в KhMAO/Yamal
+  и appear как increased baseline на pixels NOT covered industrial buffer.
+- **Trigger:** Phase 2A detection sensitivity test — investigate
+  false-positive rate в western AOI parts при detection runs covering periods
+  с predominantly easterly transport.
+- **Effort:** 2-3 days (HYSPLIT back-trajectory analysis или ERA5 wind
+  climatology correlation).
+
+---
+
+## TD-0018 NEW — Kuzbass detection caveat (mask gap pre-fix + low Kuz-Alatau counts)
+
+- **Origin:** P-01.0b CR review CLAIM 3 + MC-2026-04-29-I 2026-04-29
+- **Status:** **HIGH severity для Phase 2A в Kuzbass region**
+- **Observation:** Primary CH₄ detection target region (regression baseline
+  Кузбасс 2022-09-20 per CLAUDE §5.1) has compounded uncertainty:
+  - **Industrial mask gap pre-fix:** 4 major Kuzbass plants (Tom-Usinsk,
+    Kuznetsk TES, Novo-Kemerovo, Kemerovo) missed в P-01.0b CH₄ regional
+    baseline. Pixels near these plants могут содержать residual industrial
+    signal в regional baseline. Mask fixed в same PR, но CH₄ regional Asset
+    built на pre-fix mask (preserved per Option E).
+  - **Reference baseline reliability:** Kuznetsky Alatau (lat 53-57°N,
+    Kuzbass primary reference) imeет low TROPOMI counts 60-140/month vs
+    5000+ для lowland zones (P-01.0a TD-0010). Mountain cloud cover + SWIR
+    challenges.
+  - **Cross-check unreliable:** Both baselines have elevated uncertainty
+    в этой region. Dual baseline architecture's «one robust baseline»
+    assumption not satisfied.
+- **Phase 2A mitigation requirements:**
+  - **Stricter z_min threshold** для Kuzbass-region plumes: z_min=4.0
+    (vs default 3.0). Reduces false positive rate but also reduces sensitivity.
+  - **Manual review trigger:** events с `nearest_source_id=null` near
+    coordinate (86-88°E, 53-55°N) — likely missed Kuzbass industrial
+    source. Compare с updated `industrial/source_points` v2 (post-fix).
+  - **Document Phase 2A detection limit:** Kuzbass ~14 ppb sensitivity vs
+    Yamal/Khanty ~30+ ppb sensitivity (proxy estimate).
+- **Trigger:** Phase 2A CH₄ detection run on regression baseline Кузбасс
+  2022-09-20.
+- **Effort:** apply mitigation в Phase 2A DevPrompt (15 min config), then
+  validate с regression test.
+
+---
+
+## TD-0019 — Reference baseline latitude-stratification: extrapolation quantitative impact **[RESOLVED 2026-04-29]**
+
+- **Origin:** P-01.0b 6-point Ref vs Regional cross-check + researcher
+  investigation request 2026-04-29.
+- **Status (2026-04-29): RESOLVED — methodology bounded, distance not the
+  driver.**
+- **Trigger observation:** P-01.0b cross-check spread 38 ppb (-17.91 to
+  +21.56) для non-industrial points — beyond `consistency_tolerance_ppb=30`.
+  Hypothesis: latitude-only zone stratification (centroids 54.5/60.5/63.5°N,
+  no longitude weight) extrapolates baselines unreliably на distant points.
+- **Investigation deliverables:** `docs/p-01.0b_extrapolation_investigation/`
+  - `01_zone_map.png` — zone assignment + lat-distance heatmap
+  - `02_delta_vs_distance.png` — Δ scatter с linear fit (n=104 random clean
+    points, M07)
+  - `03_latitude_transect.png` — ref vs reg at lon=75°E
+  - `REPORT.md` — full analysis
+  - `stats.json` — raw numerical
+- **Findings:**
+  - **R² = 0.0023** (|Δ| vs lat_dist_km, n=104, p=0.629). NOT significant.
+  - Slope -0.003 ppb/km — distance к centroid не predicts \|Δ\|.
+  - \|Δ\|: max 54, mean 19.8, median 15.8 ppb. Substantial \|Δ\| exists
+    но distance не explains it.
+  - Visible step-change discretization artifact at zone boundaries
+    (57°N, 62°N) — produces local Δ even for points close to centroid.
+  - Zone 4 article t1 comparison: ref_mean=1873 vs article=1854 (Δ=+19).
+    Plausible — period + biome (whole zapoved vs wetland-only) mismatch.
+- **Verdict per researcher's pre-stated criterion (R² < 0.2):** PROCEED
+  normally. \|Δ\| reflects biome/period differences, NOT extrapolation
+  artifact.
+- **Phase 2A guidance produced:**
+  - Phase 2A `consistency_flag=false` triggers should record `lat_dist_km`
+    per candidate as confidence-modifier — NOT a hard fallback rule.
+  - Step-change boundaries (~57°N, ~62°N at lon=75°E) могут produce
+    spurious cross-check disagreements; document для Phase 1c.
+- **Future improvement (deferred, NOT blocker):** distance-weighted blend
+  между nearest-2 zones смягчил бы step changes. Candidate для potential
+  CHANGE-0018 после Phase 1c full cross-check map.
+
+---
+
+## TD-0021 NEW — Zone-boundary detection sensitivity (CH₄ Phase 2A)
+
+- **Origin:** P-01.0b extrapolation investigation 2026-04-29 (TD-0019
+  resolution + latitude transect at 75°E findings).
+- **Status:** documented, deferred к Phase 2A CH₄ detection design.
+- **Observation:** reference baseline shows discrete plateaus at latitude
+  band boundaries: Kuznetsky↔Yugansky transition ~57°N (Δ ≈ 14 ppb step,
+  1846→1880), Yugansky↔Verkhne-Tazovsky transition ~62°N (Δ ≈ 17 ppb step,
+  1880→1863). Regional baseline continuous. Phase 2A CH₄ detection within
+  ~50 km from these boundaries может trigger spurious
+  `consistency_flag=false` (dual-baseline disagreement caused by reference
+  discretization, не real anomaly).
+- **NOT blocker для NO₂/SO₂ — they don't use reference baseline в v1**
+  (single regional climatology only per RNA §11.1). Critical для Phase 2A
+  CH₄ design.
+- **Mitigation options (для Phase 2A DevPrompt or CHANGE-0018):**
+  - **(a)** moving-average smoothing reference over neighbouring 100 km
+    latitude — preserves architecture, smooths step changes
+  - **(b)** distance-weighted blend nearest-2 zones — full
+    methodology revision (CHANGE-0018 candidate)
+  - **(c)** record `lat_dist_km_to_band_boundary` per CH₄ candidate and
+    treat `consistency_flag=false` near boundaries как "ambiguous"
+    requiring additional evidence (cluster + wind alignment)
+- **Effort:** option (c) ≈ 1 hour (config flag в Phase 2A); options (a)/(b)
+  ≈ 1-3 days each.
+
+---
+
+## TD-0022 NEW — Article t1 full zonal-stats comparison (Phase 1c validation)
+
+- **Origin:** P-01.0b extrapolation investigation 2026-04-29 — partial
+  comparison only (Zone 4 confirmed +19 ppb plausible per period+biome
+  mismatch).
+- **Status:** deferred к Phase 1c.
+- **Need:** full t1 zonal stats for all 8 article zones (currently only
+  Zone 4 = 1854 ppb provided). Specifically Zone 1 (Tundra 67-72°N) and
+  Zone 8 (Steppe 52-55°N) needed to evaluate latitude-stratified
+  reference assignments на extrapolated bands.
+- **Phase 1c plan:** request adjacent project authors → extract all 8 zones
+  → compare с our reference per latitude band → independent third-party
+  validation для tool-paper.
+- **Action:** capture in Phase 1c DevPrompt (P-01.2_dual_baseline_validation.md
+  предположительно). Если authors недоступны — note as limitation, не
+  blocker.
+- **Effort:** depends on author response time + manual data extraction
+  (~30 min once received).
+
+---
+
+## TD-0020 — Bovanenkovo test point coordinate error in cross-check labels
+
+- **Origin:** P-01.0b validation report point 6 misnomer 2026-04-29
+- **Status:** documented, low priority
+- **Observation:** validation report labels point 6 «Bovanenkovo proxy»
+  (70.5°E, 70.5°N), но actual Bovanenkovo NGKM centroid находится
+  ≈(68.4°E, 70.4°N) — ~80 km west. Sampled coord falls в less-instrumented
+  Yamal zone, NOT в proper Bovanenkovo gas field.
+- **Impact:** misleading mask-coverage claim в PR #3 description and
+  earlier P-01.0b summary. Real Bovanenkovo would be in 30 km industrial
+  buffer (after CLAIM 3 fix), но sampled point may not be.
+- **Action item:** при next sanity validation, replace point 6 с actual
+  Bovanenkovo (68.4, 70.4) AND add fresh point at (70.5, 70.5) под
+  honest label "Mid-Yamal east clean".
+- **Effort:** 5 min config update + script re-run.
+
+---
+
+## TD-0008 — Refactor build_zone_baseline_single_month memory footprint (Q-mid months) **[RESOLVED 2026-04-30 — cross-gas verified]**
+
+**Final outcome (2026-04-30):** Option C (12 separate batch tasks per gas) verified
+across **all 3 gases**:
+- CH₄ regional climatology 2026-04-29: 12/12 SUCCEEDED including Q-mid
+- NO₂ regional climatology 2026-04-30: 12/12 SUCCEEDED including Q-mid
+- SO₂ regional climatology 2026-04-30: 12/12 SUCCEEDED including Q-mid
+
+Pattern documented в `build_regional_climatology.py` orchestrator. Hypothesis
+empirically confirmed across 3 different gas pipelines + 3 different runs +
+36 separate batch tasks total. TD-0008 closed с high confidence. См.
+OpenSpec MC-2026-04-30-L.
+
+---
+
+## TD-0011 — Pre-computed mask Asset для NO₂/SO₂ optimization **[RESOLVED 2026-04-30]**
+
+**Outcome:** `RuPlumeScan/industrial/proxy_mask_buffered_30km` Asset successfully
+used for NO₂ + SO₂ regional climatology builds 2026-04-30. Saved ~1.5 hours
+compute per gas (3 hours total) via skip of inline `focal_max(15km)` operation.
+Pattern: `--use-prebuilt-mask` flag в orchestrator. См. MC-2026-04-30-J/K.
+
+---
+
+## TD-0012 — Mask consistency cross-gas verification **[RESOLVED 2026-04-30]**
+
+**Outcome:** Same `proxy_mask_buffered_30km` asset used uniformly across CH₄
+(post-build verification commit 589efaf), NO₂ (2026-04-30 closure), и SO₂
+(2026-04-30 closure). Industrial pixel masking verified consistent в 3-gas
+sanity tests:
+- Norilsk Nadezhdinsky: masked в всех 3 gases ✓
+- Tom-Usinsk GRES (Kuzbass): masked в NO₂ + SO₂ (CH₄ used pre-fix mask per
+  Option E rationale, см. TD-0018)
+- Yugansky reference centroid: masked (collocated с oil infrastructure) ✓
+
+---
+
+## TD-0008 archive note (kept для historical record)
 
 - **Origin:** P-01.0a Phase A diagnostics (commit `<P-01.0a merge SHA>`, 2026-04-28)
 - **Owner:** Claude (исполняющий) при triggering
-- **Status:** **PRIORITY HIGH (escalated from `deferred`)** — после P-01.0a confirmed
-  pattern не fix-able by simple sleep, и Phase 2A pipeline зависит от valid
-  baselines для biologically active transition months (M05 Май, M08 Август,
-  M11 Ноябрь — wetland onset, peak emission, freeze-up).
+- **Status (2026-04-29): RESOLVED.** Option C verified в P-01.0b CH₄ run —
+  все 12 monthly tasks COMPLETED including Q-mid M02/M05/M08/M11. 12 separate
+  batch tasks (each own server-side memory allocation) bypass cumulative
+  graph memory limit single-iteration approach. Hypothesis confirmed.
+- **Outcome:** A (full success). См. OpenSpec MC-D + retroactive run log
+  `default_2019_2025_d2e6362c` в `logs/runs.jsonl`.
+- **Apply pattern для:** future regional baseline NO₂/SO₂ runs (built into
+  build_regional_climatology.py orchestrator). И P-01.0a reference baseline
+  if rebuild needed.
+
+### Original concern (kept для historical record)
 - **Trigger:** **BLOCKS Phase 2A** (CH4 detection) — must mitigate перед production
   detection runs. Любой из:
   - Refactor compute (preferred, 1 day work)

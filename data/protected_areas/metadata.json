@@ -62,7 +62,11 @@
       "natural_zone": "high_mountain_with_alpine",
       "latitude_band_min": 51.0,
       "latitude_band_max": 54.0,
-      "quality_status": "optional_pending_quality",
+      "quality_status": "unreliable_for_xch4_baseline",
+      "quality_status_history": [
+        {"date": "2026-04-26", "status": "optional_pending_quality", "reason": "initial — pending Algorithm v2.3 §11.4 QA test"},
+        {"date": "2026-04-28", "status": "unreliable_for_xch4_baseline", "reason": "QA test FAIL: abs_diff_winter=34.86 ppb (>30 tol), cycle_diff=34.25 ppb (>20 tol). High-altitude biome above winter PBL. См. docs/p-01.0a_altaisky_qa_result.json"}
+      ],
       "established_year": 1932,
       "iucn_category": "Ia",
       "official_url": "https://www.altzapovednik.ru"

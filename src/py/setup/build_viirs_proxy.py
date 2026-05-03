@@ -42,7 +42,9 @@ PROJECT_ID = "nodal-thunder-481307-u1"
 DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "industrial_sources"
 OUTPUT_GEOJSON = DATA_DIR / "viirs_bright_proxy.geojson"
 
-AOI_BBOX = (60.0, 55.0, 90.0, 75.0)
+# AOI canonical (60, 50, 95, 75) per CLAIM 3 fix 2026-04-29 — aligned с
+# downstream consumers (mask, baselines). См. OpenSpec MC-F.
+AOI_BBOX = (60.0, 50.0, 95.0, 75.0)
 
 # Sanity check anchors (revised per researcher decision: Variant B, threshold=50).
 # Все 4 facilities имеют active flaring expected >50 nW/cm²/sr median 2022-2024.

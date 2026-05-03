@@ -376,7 +376,72 @@ def test_validate_batch_separates_valid_and_invalid(
 
 
 def test_schema_version_pinned() -> None:
-    assert SCHEMA_VERSION == "1.0"
+    assert SCHEMA_VERSION == "1.1"
+
+
+def test_dual_baseline_fields_present() -> None:
+    """v1.1 added 5 dual-baseline-related fields per Algorithm v2.3 §2.1."""
+    base = {
+        "event_id": "x",
+        "source_catalog": "schuit2023",
+        "source_event_id": "y",
+        "schema_version": SCHEMA_VERSION,
+        "ingestion_date": date(2026, 4, 29),
+        "gas": "CH4",
+        "date_utc": date(2024, 7, 15),
+        "lon": 70.0,
+        "lat": 60.0,
+        "delta_vs_regional_climatology": 25.5,
+        "delta_vs_reference_baseline": 23.0,
+        "baseline_consistency_flag": True,
+        "matched_inside_reference_zone": False,
+        "nearest_reference_zone": "yugansky",
+    }
+    event = from_dict(base)
+    assert event.delta_vs_regional_climatology == 25.5
+    assert event.delta_vs_reference_baseline == 23.0
+    assert event.baseline_consistency_flag is True
+    assert event.matched_inside_reference_zone is False
+    assert event.nearest_reference_zone == "yugansky"
+
+
+def test_dual_baseline_fields_optional() -> None:
+    """Все 5 dual-baseline fields nullable — comparison Engine fills позже."""
+    base = {
+        "event_id": "x",
+        "source_catalog": "schuit2023",
+        "source_event_id": "y",
+        "schema_version": SCHEMA_VERSION,
+        "ingestion_date": date(2026, 4, 29),
+        "gas": "CH4",
+        "date_utc": date(2024, 7, 15),
+        "lon": 70.0,
+        "lat": 60.0,
+    }
+    event = from_dict(base)
+    assert event.delta_vs_regional_climatology is None
+    assert event.delta_vs_reference_baseline is None
+    assert event.baseline_consistency_flag is None
+    assert event.matched_inside_reference_zone is None
+    assert event.nearest_reference_zone is None
+
+
+def test_schema_version_v1_0_rejected() -> None:
+    """Strict validator: v1.0 input rejected post-migration."""
+    minimal = {
+        "event_id": "x",
+        "source_catalog": "schuit2023",
+        "source_event_id": "y",
+        "schema_version": "1.0",  # OLD
+        "ingestion_date": date(2026, 4, 29),
+        "gas": "CH4",
+        "date_utc": date(2024, 7, 15),
+        "lon": 70.0,
+        "lat": 60.0,
+    }
+    with pytest.raises(PydanticValidationError) as exc_info:
+        from_dict(minimal)
+    assert "schema_version" in str(exc_info.value).lower()
 
 
 def test_gas_types_complete() -> None:
