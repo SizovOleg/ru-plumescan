@@ -285,6 +285,33 @@ Hardcoded set in v1.0: 4 zones (Юганский, Верхнетазовский
 
 ### 2.4. Run lifecycle (extended in v2.3)
 
+#### 2.4.1. Canonical Provenance Pattern (NEW в v2.3, P-01.0c)
+
+Each Run следует этому pattern для DNA §2.1 запрет 12 compliance («Не выдавать Run без полного config snapshot»):
+
+1. **Process start:** compute `provenance = compute_provenance(config, config_id, period)` ONCE.  
+   Returns immutable `Provenance` dataclass (frozen=True) — same config dict ALWAYS produces same Provenance object.
+2. **Pre-submission:** log STARTED entry с `write_provenance_log(provenance, status="STARTED", ...)`.
+3. **Submission:** submit batch tasks (Provenance не recomputed — reused by reference).
+4. **Post-completion:**
+   - Apply `provenance.to_asset_properties()` к exported assets via `ee.data.setAssetProperties` immediately после combine task SUCCEEDED (не later — config could drift).
+   - Log SUCCEEDED entry с `write_provenance_log(provenance, status="SUCCEEDED", ...)`.
+
+**Critical invariant:** same Provenance object reference flows через все 4 шага. Hash drift impossible by construction (dataclass frozen=True).
+
+**Helpers** (single source of truth — `src/py/rca/provenance.py`):
+- `compute_provenance(config, config_id, period, algorithm_version, rna_version) → Provenance`
+- `Provenance.to_asset_properties() → dict` (suitable для `setAssetProperties`)
+- `Provenance.to_log_entry(event, **extra) → dict` (suitable для jsonl)
+- `write_provenance_log(provenance, status, gas, period, asset_id, extra=...) → Path`
+- `canonical_serialize(config) → str` (the ONLY allowed serialization для `params_hash`)
+
+**Audit:** `tools/audit_provenance_consistency.py` CI gate enforces consistency:
+- Каждый baseline/catalog asset имеет provenance triple
+- Asset.params_hash matches at least one log entry с matching run_id
+
+Per TD-0024 (resolved 2026-05-XX): `params_hash` recomputation в parallel code paths is forbidden — it caused hash drift между runtime config dicts. Going forward, only the centralized helpers above are allowed.
+
 ```
 1. User selects Configuration Preset
 2. System computes params_hash, generates run_id

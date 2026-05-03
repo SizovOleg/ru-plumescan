@@ -568,6 +568,44 @@ reference_only: deepMerge(DEFAULT_PRESET, {
 
 ## 9. Logging и reproducibility
 
+### 9.1. Canonical Provenance Computation (NEW в v1.2, P-01.0c)
+
+Use `src/py/rca/provenance.py::compute_provenance` для **ALL** Run lifecycles. Не recompute `params_hash` в other code paths (per TD-0024 lessons — каждое independent recomputation produced different hash from slightly different config dict).
+
+**Required pattern:**
+```python
+from rca.provenance import compute_provenance, write_provenance_log
+
+# Once at process start
+prov = compute_provenance(
+    config=full_config_dict,
+    config_id="default",  # или другой preset name
+    period="2019_2025",
+)
+
+# Pre-submission
+write_provenance_log(prov, status="STARTED", gas="CH4", period="2019_2025",
+                     asset_id="...")
+
+# Post-completion
+ee.data.setAssetProperties(asset_id, prov.to_asset_properties())
+write_provenance_log(prov, status="SUCCEEDED", gas="CH4", period="2019_2025",
+                     asset_id="...", extra={"n_tasks": 12, "outcome": "A_FULL_SUCCESS"})
+```
+
+**Frozen dataclass invariant:** `Provenance` is `@dataclass(frozen=True)`. Same Provenance object reference passes через STARTED → submit → SUCCEEDED → asset properties. Mutation prevented at construction.
+
+**Existing baseline assets backfilled** via `src/py/setup/backfill_provenance.py` (P-01.0c, 2026-05-XX) для DNA §2.1 запрет 12 compliance restoration. Каждый backfilled asset имеет:
+- `provenance_backfill_date`
+- `provenance_backfill_caveat` (honest reconstruction limitations)
+- `provenance_backfill_commit` (P-01.0c PR commit SHA)
+- `provenance_backfill_source_commit` (build script source commit)
+- `pre_backfill_params_hash` (если был)
+
+Future runs: provenance native (no backfill needed). Audit script `tools/audit_provenance_consistency.py` runs в CI (`--no-gee` mode validates allowlist + log schema; full GEE audit requires service account credentials, currently local-only).
+
+---
+
 Без изменений с v1.1, плюс:
 
 **Reference baseline runs логируются отдельно** в `RuPlumeScan/runs/baseline_<gas>_<period>_<run_id>` с metadata:

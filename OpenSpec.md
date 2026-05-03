@@ -584,6 +584,41 @@ existing architectural decisions. Документируются здесь дл
   4 months fail. Phase B Export batch task TBD (FAIL on first attempt с
   null-constant error — fixed via valid-zones filter + `--phase-b-only` flag).
 
+### MC-2026-05-03-M — TD-0024 provenance hardening (P-01.0c)
+
+- Date: 2026-05-03
+- Trigger: TD-0024 audit findings post-Phase 1b closure (PR #3, commit `9d4d9bd`).
+- Type: Sub-implementation hardening (process improvement, не methodology change).
+- Affected documents:
+  - `Algorithm.md` §2.4.1 NEW — canonical provenance pattern documentation
+  - `RNA.md` §9.1 NEW — required helpers + frozen dataclass invariant
+  - `KNOWN_TODOS.md` — TD-0024 status RESOLVED
+- Affected code:
+  - `src/py/rca/provenance.py` — upgraded к immutable `Provenance` dataclass (frozen=True), `compute_provenance` returns it instead of dict, new `write_provenance_log(prov, status, ...)`, `canonical_serialize` made explicit single source of truth, `write_run_log` legacy API kept с DeprecationWarning
+  - `src/py/setup/backfill_provenance.py` — NEW one-shot backfill script с per-asset reconstructed canonical config + honest backfill caveat fields
+  - `src/py/setup/closeout_phase_1b.py` — updated к new write_provenance_log API
+  - `src/py/tests/test_provenance.py` — NEW 16 tests (frozen invariant, hash determinism, dict-order-independence, run_id format, etc.)
+  - `tools/audit_provenance_consistency.py` — NEW audit tool с two modes:
+    - default: GEE asset checks (provenance fields + log hash equality)
+    - `--no-gee`: schema-only audit для CI без credentials
+  - `tools/provenance_audit_allowlist.json` — NEW allowlist mechanism для phased remediation; emptied after backfill done в same PR
+  - `.github/workflows/audit.yml` — NEW CI workflow runs `--no-gee` audit on PR/push; full GEE audit gated on `workflow_dispatch` + `GEE_SERVICE_ACCOUNT_KEY` secret (escalation: secret not yet configured, see workflow header).
+- Backfill outcomes (см. `docs/p-01.0c_backfill_report.json`):
+
+  | Asset | Pre-backfill | Reconstructed canonical | Status |
+  |---|---|---|---|
+  | reference_CH4_2019_2025_v1 | (no params_hash) | `06f3bb6d...` | BACKFILLED + VERIFIED + logged |
+  | regional_CH4_2019_2025 | `c8b6e97f...` | `c9e7d747...` | BACKFILLED + VERIFIED + logged |
+  | regional_NO2_2019_2025 | `7c2f8b2b...` | `646b4e97...` | BACKFILLED + VERIFIED + logged |
+  | regional_SO2_2019_2025 | `f669e1c8...` | `71f18f76...` | BACKFILLED + VERIFIED + logged |
+
+- **Deviation from DevPrompt:** NO₂ originally marked as "verify-only" в DevPrompt (was internally consistent `7c2f8b2b` STARTED=SUCCEEDED=asset). Dry-run revealed canonical reconstruction yields different hash because runtime config dict (used by closeout_phase_1b.py) differed slightly from canonical reconstruction (built from `build_regional_climatology.py` source code state). Backfilled NO₂ к canonical schema for consistency across all 4 baseline assets. Каждый backfilled asset documents pre-backfill hash via `pre_backfill_params_hash` property — original runtime hash preserved для forensic audit.
+- **Honest reconstruction caveat** на каждом backfilled asset (`provenance_backfill_caveat` field):
+  > "Reconstructed canonical config from build script source code at commit `<sha>` + RNA v1.2 defaults + algorithm_version 2.3 parameters. params_hash recomputed via centralized compute_provenance helper. KNOWN UNCERTAINTY: runtime config may have included parameters не captured в reconstruction. Original log entries preserved в logs/runs.jsonl. For bit-identical reproduction, refer к commit SHA + RNA version, не just params_hash."
+- Audit gate enforcement: `python tools/audit_provenance_consistency.py` PASSED post-backfill (4/4 OK, allowlist empty). `--no-gee` mode also PASSED (allowlist + log schema valid).
+- TD-0024 status: **RESOLVED 2026-05-03** (cumulative — backfill done, prevention pattern enforced via frozen dataclass + audit CI gate).
+- TD-0024 escalation outstanding: full GEE audit в CI requires `GEE_SERVICE_ACCOUNT_KEY` secret. Per researcher escalation directive — не assumed, deferred к user setup. Local audit run остаётся primary gate until secret configured.
+
 ### MC-2026-04-30-J — NO₂ regional climatology completion (Phase 1b)
 
 - Date: 2026-04-30
