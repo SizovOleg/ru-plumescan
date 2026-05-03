@@ -27,7 +27,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import ee
+# `ee` (earthengine-api) imported lazily inside audit() / get_asset_provenance()
+# чтобы --no-gee mode работал без installed earthengine-api package (CI default).
 
 # Console на Windows default cp1251 — Unicode (Δ, °, ²) crashes print().
 if hasattr(sys.stdout, "reconfigure"):
@@ -90,6 +91,8 @@ def list_audited_assets(project: str) -> list[str]:
 
     Skips collections и folders themselves.
     """
+    import ee  # lazy — only when full audit needed
+
     asset_root = f"projects/{project}/assets/RuPlumeScan"
     parents = [
         f"{asset_root}/baselines",
@@ -119,6 +122,8 @@ def list_audited_assets(project: str) -> list[str]:
 
 def get_asset_provenance(asset_id: str) -> dict[str, Any]:
     """Read provenance properties from asset metadata."""
+    import ee  # lazy — only when full audit needed
+
     try:
         info = ee.data.getAsset(asset_id)
         props = info.get("properties", {})
@@ -176,6 +181,8 @@ def audit(
     """
     Run full audit. Returns dict с per-asset results.
     """
+    import ee  # lazy — only when full audit needed
+
     ee.Initialize(project=project)
 
     allowlist = load_allowlist(allowlist_path)
