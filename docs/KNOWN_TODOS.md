@@ -11,6 +11,56 @@ deferrals**, не для architectural changes.
 
 ---
 
+## TD-0025 NEW — Integrate compute_provenance directly в build scripts **[HIGH PRIORITY]**
+
+- **Origin:** P-01.0c closure observation 2026-05-04 (researcher review of TD-0024 backfill outcomes).
+- **Status:** OPEN HIGH — Phase 2A pre-implementation blocker.
+- **Issue:** TD-0024 root cause was multiple code paths assembling configs independently:
+  - `build_regional_climatology.py` (runtime build) sets asset metadata via `combined.set({...})` без provenance fields
+  - `closeout_phase_1b.py` (closure script) computes hash from independently re-assembled config dict, calls `setAssetProperties` post-hoc
+  - Even when both produce «consistent» hash (e.g., NO₂ `7c2f8b2b` STARTED=SUCCEEDED=asset), the underlying config dict was non-canonical relative к build script source
+- **Fix design (Phase 2A pre-implementation):**
+  - **`build_regional_climatology.py`** must call `compute_provenance(config) → Provenance` at process start
+  - Pass `Provenance` object к все downstream operations:
+    - STARTED log entry via `write_provenance_log(prov, status="STARTED", ...)`
+    - Asset metadata via `combined.set(prov.to_asset_properties())` at `Export.image.toAsset` time (NOT post-hoc setAssetProperties)
+    - SUCCEEDED log entry via `write_provenance_log(prov, status="SUCCEEDED", ...)`
+  - **`build_reference_baseline_ch4.py`** same integration
+  - **Detection scripts** (Phase 2A): same pattern — compute_provenance once at start, propagate
+  - Closure / monitoring scripts MUST receive Provenance from upstream (file or function arg), never recompute
+- **Scope:**
+  - Update build_regional_climatology.py + build_reference_baseline_ch4.py to integrate compute_provenance natively
+  - Update orchestrator state file (`p-01.0b_state_*.json`) to persist Provenance object для resumability
+  - Add unit test verifying build script + closure script produce same hash when given same config preset
+  - Update Algorithm.md §2.4 + RNA.md §11.5 со updated workflow
+- **Trigger:** Phase 2A design DevPrompt — fix MUST be in place before any detection event Run records generated.
+- **Effort:** 4-6 hours (integration + tests).
+- **Dependency:** TD-0024 closure (DONE), Provenance dataclass available (DONE).
+
+---
+
+## TD-0026 NEW — Setup GEE service account для CI full audit **[HIGH PRIORITY]**
+
+- **Origin:** P-01.0c CI workflow setup 2026-05-03 (escalation per researcher directive «If auth setup needs manual configuration — escalate, не assume»).
+- **Status:** OPEN HIGH — Phase 2A production runs blocker.
+- **Issue:** `tools/audit_provenance_consistency.py` без `--no-gee` flag requires GEE authentication. CI workflow `.github/workflows/audit.yml` `gee-audit` job currently gated на `workflow_dispatch + full_gee_audit=true` because `GEE_SERVICE_ACCOUNT_KEY` secret не configured. Local audit remains primary gate.
+- **Required action (researcher / project owner):**
+  1. Create GEE service account с **read-only** access on:
+     - `projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/*`
+     - `projects/nodal-thunder-481307-u1/assets/RuPlumeScan/catalog/*`
+     - (optional) `projects/nodal-thunder-481307-u1/assets/RuPlumeScan/refs/*` для Phase 1c+
+  2. Generate JSON key file
+  3. Upload as GitHub secret named `GEE_SERVICE_ACCOUNT_KEY` (full JSON content, not file path)
+  4. Modify `.github/workflows/audit.yml`:
+     - Remove `if: ${{ github.event_name == 'workflow_dispatch' && ... }}` condition on `gee-audit` job, OR
+     - Change to `if: ${{ secrets.GEE_SERVICE_ACCOUNT_KEY != '' }}` so it auto-runs when secret present
+  5. Verify next PR triggers full GEE audit successfully
+- **Why HIGH priority:** Phase 2A detection events automated on schedule. Full audit gate critical для catching provenance violations from new code (TD-0024-style drift). `--no-gee` schema validation alone insufficient — миссит asset hash mismatches.
+- **Trigger:** before Phase 2A production detection runs go live.
+- **Effort:** ~30 minutes researcher action + 10 min YAML edit.
+
+---
+
 ## TD-0023 NEW — Cities-vs-industrial scope inflation (NO₂/SO₂ baseline) **[HIGH PRIORITY]**
 
 - **Origin:** P-01.0b Phase 1b closure sanity validation 2026-04-30 — Tyumen,
@@ -44,12 +94,30 @@ deferrals**, не для architectural changes.
 
 ---
 
-## TD-0024 NEW — Provenance hash consistency bug **[HIGH PRIORITY]**
+## TD-0024 — Provenance hash consistency bug **[RESOLVED 2026-05-03 (P-01.0c)]**
 
 - **Origin:** P-01.0b Phase 1b closure 2026-04-30 — SO₂ STARTED log used
   different params_hash than SUCCEEDED log + asset metadata.
-- **Status:** OPEN HIGH — Phase 2A blocker (detection events need
-  bit-identical reproducibility).
+- **Status:** **RESOLVED 2026-05-03** — backfill executed, prevention pattern
+  enforced via frozen `Provenance` dataclass + CI audit gate. См. OpenSpec
+  MC-2026-05-03-M + `docs/p-01.0c_backfill_report.json`.
+- **Resolution summary:**
+  - All 4 baseline assets backfilled с canonical params_hash (reference CH₄ v1
+    + regional CH₄ + regional NO₂ + regional SO₂)
+  - Honest backfill caveat fields document reconstruction limitations
+  - Original runtime hashes preserved as `pre_backfill_params_hash` для forensic audit
+  - Centralized `compute_provenance(config) → Provenance` (frozen dataclass)
+    prevents future hash drift by construction
+  - Audit tool `tools/audit_provenance_consistency.py` + allowlist mechanism +
+    CI integration via `.github/workflows/audit.yml` (`--no-gee` schema validation
+    on every PR; full GEE audit gated on workflow_dispatch + secret)
+  - Algorithm.md §2.4.1 + RNA.md §9.1 documentation о canonical pattern
+- **Escalation outstanding:** full GEE audit в CI requires
+  `GEE_SERVICE_ACCOUNT_KEY` GitHub secret. Per researcher directive — не
+  assumed, deferred к user. Local audit (`python tools/audit_provenance_consistency.py`)
+  остаётся primary gate until secret configured.
+
+### Original audit findings (kept для historical record)
 - **Audit results (2026-04-30, all 4 P-01.0a/0b runs):**
 
   | Run | log STARTED | log SUCCEEDED | asset.params_hash | Verdict |

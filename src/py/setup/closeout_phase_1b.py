@@ -32,7 +32,7 @@ if hasattr(sys.stdout, "reconfigure"):
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "src" / "py"))
 
-from rca.provenance import compute_provenance, write_run_log  # noqa: E402
+from rca.provenance import compute_provenance, write_provenance_log  # noqa: E402
 
 GEE_PROJECT = "nodal-thunder-481307-u1"
 ASSETS_ROOT = "projects/nodal-thunder-481307-u1/assets"
@@ -317,15 +317,13 @@ def main() -> None:
             "phase": "P-01.0b",
         }
         prov = compute_provenance(cfg, period="2019_2025")
-        log_path = write_run_log(
-            run_id=prov["run_id"],
-            config_id=prov["config_id"],
-            params_hash=prov["params_hash"],
+        log_path = write_provenance_log(
+            prov,
+            status="SUCCEEDED",
             gas=gas,
             period="2019_2025",
             ended_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
             asset_id=ASSET_FOR[gas],
-            status="SUCCEEDED",
             extra={
                 "baseline_type": "regional",
                 "phase": "P-01.0b",
@@ -335,8 +333,8 @@ def main() -> None:
                 "mask_asset": "proxy_mask_buffered_30km",
             },
         )
-        closure["run_logs"][gas] = {"run_id": prov["run_id"], "path": str(log_path)}
-        print(f"  {gas}: run_id={prov['run_id']}")
+        closure["run_logs"][gas] = {"run_id": prov.run_id, "path": str(log_path)}
+        print(f"  {gas}: run_id={prov.run_id}")
 
     closure["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     out_json = REPO_ROOT / "docs" / "p-01.0b_closure_report.json"

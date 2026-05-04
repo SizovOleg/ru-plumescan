@@ -1,0 +1,5 @@
+{
+  "schema_version": "1.0",
+  "description": "Known provenance mismatches tracked для phased remediation. Initial state during P-01.0c work contained 4 entries (1 missing-provenance, 3 log/asset hash mismatches). Emptied after backfill done в same PR — strict CI gate going forward.",
+  "known_mismatches": []
+}

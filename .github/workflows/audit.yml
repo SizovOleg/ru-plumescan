@@ -1,0 +1,70 @@
+name: Provenance Audit
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      full_gee_audit:
+        description: "Run full GEE asset audit (requires GEE_SERVICE_ACCOUNT_KEY secret)"
+        required: false
+        default: "false"
+
+# CI runs --no-gee mode that validates allowlist JSON + logs/runs.jsonl entry schema.
+# Full GEE-asset audit requires authentication credentials (escalation per P-01.0c
+# DevPrompt: "if auth setup needs manual configuration — escalate, не assume").
+#
+# To enable full GEE audit:
+#   1. Create GEE service account with read access на RuPlumeScan/baselines/* and
+#      RuPlumeScan/catalog/*.
+#   2. Add JSON key file as GitHub secret named GEE_SERVICE_ACCOUNT_KEY.
+#   3. Trigger workflow_dispatch с `full_gee_audit=true` OR change condition below.
+#
+# Until then, full audit is run locally:
+#   python tools/audit_provenance_consistency.py
+jobs:
+  schema-audit:
+    name: Schema audit (no GEE)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Run no-gee audit
+        run: python tools/audit_provenance_consistency.py --no-gee
+
+  gee-audit:
+    name: Full GEE audit (manual dispatch only)
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.full_gee_audit == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        working-directory: src/py
+        run: pip install -r requirements-dev.txt
+
+      - name: Auth GEE
+        env:
+          GEE_SERVICE_ACCOUNT_KEY: ${{ secrets.GEE_SERVICE_ACCOUNT_KEY }}
+        run: |
+          if [ -z "$GEE_SERVICE_ACCOUNT_KEY" ]; then
+            echo "ERROR: GEE_SERVICE_ACCOUNT_KEY secret not configured."
+            echo "See .github/workflows/audit.yml header comment для setup."
+            exit 1
+          fi
+          echo "$GEE_SERVICE_ACCOUNT_KEY" > /tmp/gee-key.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gee-key.json" >> $GITHUB_ENV
+
+      - name: Run full audit
+        run: python tools/audit_provenance_consistency.py

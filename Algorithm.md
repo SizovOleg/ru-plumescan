@@ -285,6 +285,74 @@ Hardcoded set in v1.0: 4 zones (Юганский, Верхнетазовский
 
 ### 2.4. Run lifecycle (extended in v2.3)
 
+#### 2.4.1. Canonical Provenance Pattern (NEW в v2.3, P-01.0c)
+
+Each Run следует этому pattern для DNA §2.1 запрет 12 compliance («Не выдавать Run без полного config snapshot»):
+
+1. **Process start:** compute `provenance = compute_provenance(config, config_id, period)` ONCE.  
+   Returns immutable `Provenance` dataclass (frozen=True) — same config dict ALWAYS produces same Provenance object.
+2. **Pre-submission:** log STARTED entry с `write_provenance_log(provenance, status="STARTED", ...)`.
+3. **Submission:** submit batch tasks (Provenance не recomputed — reused by reference).
+4. **Post-completion:**
+   - Apply `provenance.to_asset_properties()` к exported assets via `ee.data.setAssetProperties` immediately после combine task SUCCEEDED (не later — config could drift).
+   - Log SUCCEEDED entry с `write_provenance_log(provenance, status="SUCCEEDED", ...)`.
+
+**Critical invariant:** same Provenance object reference flows через все 4 шага. Hash drift impossible by construction (dataclass frozen=True).
+
+**Helpers** (single source of truth — `src/py/rca/provenance.py`):
+- `compute_provenance(config, config_id, period, algorithm_version, rna_version) → Provenance`
+- `Provenance.to_asset_properties() → dict` (suitable для `setAssetProperties`)
+- `Provenance.to_log_entry(event, **extra) → dict` (suitable для jsonl)
+- `write_provenance_log(provenance, status, gas, period, asset_id, extra=...) → Path`
+- `canonical_serialize(config) → str` (the ONLY allowed serialization для `params_hash`)
+
+**Audit:** `tools/audit_provenance_consistency.py` CI gate enforces consistency:
+- Каждый baseline/catalog asset имеет provenance triple
+- Asset.params_hash matches at least one log entry с matching run_id
+- Empty allowlist policy after P-01.0c — strict CI gate
+
+#### Anti-patterns (prohibited — these caused TD-0024)
+
+| ❌ Anti-pattern | ✓ Required pattern |
+|-----------------|---------------------|
+| **Calling `compute_provenance(...)` multiple times for the same Run** (e.g., once в build script, once в closure script) | Compute **ONCE** at process start. Pass returned `Provenance` object к все subsequent operations. |
+| **Reassembling config dict в closure / monitoring / report scripts** with «similar» keys | Closure scripts MUST receive Provenance object из upstream pipeline (file, env var, or function argument). Never recompute hash from re-assembled config. |
+| **Mutating config dict** between hash computation и asset metadata write | `Provenance` dataclass `frozen=True` enforces this structurally. Never bypass с `dataclasses.replace()` mid-Run. |
+| **Calling `hashlib.sha256` или `json.dumps` directly на config** | Always use `compute_provenance` / `canonical_serialize`. Direct hashing skips order-normalization → drift. |
+| **Computing `params_hash` for STARTED log с config A, then asset metadata с config B** ("close-but-different" dicts) | Same Provenance object flows through. STARTED, SUCCEEDED logs, и `setAssetProperties` все consume same instance. |
+| Letting build script set asset metadata via `combined.set({...})` без provenance fields, then closure script bolts them on later | Build script must integrate `compute_provenance` natively. See TD-0025 follow-up. |
+
+**Concrete code example** demonstrating canonical pattern:
+
+```python
+from rca.provenance import compute_provenance, write_provenance_log
+import ee
+
+# === ONCE at process start ===
+config = build_config_from_preset_name(args.preset)  # full Configuration dict
+prov = compute_provenance(config, config_id=args.preset, period="2019_2025")
+
+# === STARTED log (immediately after) ===
+write_provenance_log(prov, status="STARTED", gas=args.gas, period="2019_2025",
+                     asset_id=final_asset_path)
+
+# === Submission (Provenance не recomputed) ===
+task = ee.batch.Export.image.toAsset(image=combined, assetId=final_asset_path, ...)
+task.start()
+
+# === Post-completion ===
+ee.data.setAssetProperties(final_asset_path, prov.to_asset_properties())
+write_provenance_log(prov, status="SUCCEEDED", gas=args.gas, period="2019_2025",
+                     asset_id=final_asset_path, extra={"n_tasks": 12})
+```
+
+**Enforcement:** `tools/audit_provenance_consistency.py` runs на every PR (CI) и detects:
+- Asset missing provenance triple → fail
+- Asset hash не matches any log entry с same run_id → fail (suggests parallel computation drift)
+- Allowlist mechanism для phased remediation; strict empty allowlist policy в production.
+
+Per TD-0024 (resolved 2026-05-03): `params_hash` recomputation в parallel code paths is forbidden — it caused hash drift между runtime config dicts. Going forward, only the centralized helpers above are allowed. TD-0025 tracks integration of `compute_provenance` directly into build scripts (still pending для Phase 2A pre-implementation).
+
 ```
 1. User selects Configuration Preset
 2. System computes params_hash, generates run_id

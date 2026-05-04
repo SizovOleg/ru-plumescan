@@ -1,0 +1,59 @@
+{
+  "p_01_0c_commit": "P-01.0c-commit-pending",
+  "executed_at": "2026-05-03T07:02:40.770848+00:00",
+  "dry_run": false,
+  "results": [
+    {
+      "asset": "reference_CH4_2019_2025_v1",
+      "status": "backfilled",
+      "params_hash": "06f3bb6de0d3fd3becbdf57b64a1f1dd35275fe60ecb687f4d7bd50802bb809d",
+      "verify": {
+        "params_hash_set": true,
+        "config_id_set": true,
+        "run_id_set": true,
+        "algorithm_version_set": true,
+        "rna_version_set": true,
+        "caveat_present": true
+      }
+    },
+    {
+      "asset": "regional_CH4_2019_2025",
+      "status": "backfilled",
+      "params_hash": "c9e7d747d74be011f2dce465e81d9602073d4aa6666c7c28e199bf86abe68675",
+      "verify": {
+        "params_hash_set": true,
+        "config_id_set": true,
+        "run_id_set": true,
+        "algorithm_version_set": true,
+        "rna_version_set": true,
+        "caveat_present": true
+      }
+    },
+    {
+      "asset": "regional_NO2_2019_2025",
+      "status": "backfilled",
+      "params_hash": "646b4e97b234631a56cbe5e6ba063879852ed7f5d326d8a8ff2e7d3f97334fb7",
+      "verify": {
+        "params_hash_set": true,
+        "config_id_set": true,
+        "run_id_set": true,
+        "algorithm_version_set": true,
+        "rna_version_set": true,
+        "caveat_present": true
+      }
+    },
+    {
+      "asset": "regional_SO2_2019_2025",
+      "status": "backfilled",
+      "params_hash": "71f18f7697898696288196da2d0c33bd86787e05d53169579d0e5833ff19c8ff",
+      "verify": {
+        "params_hash_set": true,
+        "config_id_set": true,
+        "run_id_set": true,
+        "algorithm_version_set": true,
+        "rna_version_set": true,
+        "caveat_present": true
+      }
+    }
+  ]
+}
