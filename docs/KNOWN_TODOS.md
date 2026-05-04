@@ -39,7 +39,23 @@ deferrals**, не для architectural changes.
 
 ---
 
-## TD-0027 NEW — Industrial buffer per source type (large gas fields) **[Phase 2A pre-implementation]**
+## TD-0027 — Industrial buffer per source type **[RESOLVED 2026-05-04 (P-01.0d) — pending rebuild verification]**
+
+**Resolution (P-01.0d):** Heterogeneous per-feature buffer applied via classification table (`src/py/rca/classify_source_types.py`):
+- `gas_field` 50 km (13 features, including 6 newly-added missing gas fields)
+- `viirs_flare_high` 30 km (168 features, radiance ≥100 nW/cm²/sr)
+- `viirs_flare_low` 15 km (306 features)
+- `tpp_gres` 30 km (33 features, hydro/nuclear dropped)
+- `coal_mine` 30 km (7 features)
+- `smelter` 30 km (5 features)
+
+New Asset: `RuPlumeScan/industrial/proxy_mask_buffered_per_type` — sanity 7/7 PASS включая Tambeyskoye centroid (50 km buffer applied, masked).
+
+Final RESOLVED status pending Шаг 6 verification (Tambeyskoye + similar gas fields no longer appear как suspect clusters в regenerated dual baseline cross-check).
+
+См. Algorithm §3.4.1.1 + OpenSpec MC-O.
+
+### Original TD-0027 issue (preserved):
 
 - **Origin:** P-01.2 closure 2026-05-04 — Tambeyskoye cluster #4 (74.08°N, 83.70°E, area 161 km², mean Δ=59.6 ppb) revealed default 30 km buffer insufficient для major gas fields.
 - **Status:** OPEN — Phase 2A pre-implementation investigation.
@@ -80,7 +96,13 @@ deferrals**, не для architectural changes.
 
 ---
 
-## TD-0023 NEW — Cities-vs-industrial scope inflation (NO₂/SO₂ baseline) **[HIGH PRIORITY]**
+## TD-0023 — Cities-vs-industrial scope inflation **[RESOLVED 2026-05-04 (P-01.0d) — pending rebuild verification]**
+
+**Resolution (P-01.0d):** New `RuPlumeScan/urban/urban_mask_smod22` Asset created via JRC GHS-SMOD ≥22 threshold. Combined с industrial mask via AND-merge в `build_regional_climatology.py --use-urban-mask`. Sanity 4/4 PASS (Tyumen/Surgut/Novokuznetsk masked as urban, Yamal vacuum non-urban). Reprojection 1km→7km uses MAX reducer (conservative — any 1km urban → 7km cell urban). См. Algorithm §3.4.1.2 + OpenSpec MC-O.
+
+NO₂/SO₂ regional baselines rebuilding с urban + per-type combined masking (24-30h ETA). Final RESOLVED status pending Шаг 6 sanity verification.
+
+### Original TD-0023 issue (preserved):
 
 - **Origin:** P-01.0b Phase 1b closure sanity validation 2026-04-30 — Tyumen,
   Surgut, Novokuznetsk all masked в NO₂/SO₂ regional baselines via 30 km

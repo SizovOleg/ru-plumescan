@@ -584,6 +584,42 @@ existing architectural decisions. Документируются здесь дл
   4 months fail. Phase B Export batch task TBD (FAIL on first attempt с
   null-constant error — fixed via valid-zones filter + `--phase-b-only` flag).
 
+### MC-2026-05-04-O — TD-0023 urban masking + TD-0027 per-type buffer combined (P-01.0d)
+
+- Date: 2026-05-04
+- Type: Sub-implementation refinement (closes 2 HIGH priority TDs in single rebuild cycle)
+- Affected:
+  - `Algorithm.md` §3.4.1.1 NEW (per-source-type buffer), §3.4.1.2 NEW (urban masking)
+  - `RNA.md` §3.1 Asset hierarchy update
+  - `KNOWN_TODOS.md` TD-0023 → RESOLVED-pending-rebuild, TD-0027 → RESOLVED-pending-rebuild
+- New code:
+  - `src/py/rca/classify_source_types.py` — pure-function classification (21 tests, frozen Classification dataclass)
+  - `src/py/setup/inspect_industrial_sources.py` — read-only schema inspector
+  - `src/py/setup/update_source_points_p_01_0d.py` — drop 5 hydro/nuclear + add 6 missing gas fields (Tambeyskoye et al.)
+  - `src/py/setup/build_urban_mask.py` — GHS-SMOD ≥22 urban mask Asset с reduceResolution(MAX) reprojection
+  - `src/py/setup/build_industrial_buffered_mask_per_type.py` — heterogeneous per-feature buffer Asset
+  - `src/py/setup/launch_p_01_0d_rebuild.py` — orchestrator: archive 3 + launch 36 tasks
+  - `src/py/setup/build_regional_climatology.py` refactored — `--use-per-type-mask`, `--use-urban-mask` flags + native canonical Provenance pattern (TD-0025 partial closure: build script integrates `compute_provenance` natively, no longer post-hoc closure-script provenance)
+
+- New live GEE assets:
+  - `RuPlumeScan/industrial/source_points` — 532 features (was 531; -5 hydro/nuclear, +6 gas fields)
+  - `RuPlumeScan/industrial/source_points_v1_pre_per_type` — pre-rebuild snapshot
+  - `RuPlumeScan/urban/urban_mask_smod22` — GHS-SMOD ≥22 binary, sanity 4/4 PASS
+  - `RuPlumeScan/industrial/proxy_mask_buffered_per_type` — heterogeneous buffer (50/30/15 km), sanity 7/7 PASS
+  - 3× `RuPlumeScan/baselines/regional_<gas>_2019_2025_v1_pre_urban_mask` — Phase 1b archive copies
+
+- Sanity verifications passed:
+  - Source_points: 532 features, Tambeyskoye/Bovanenkovo/etc. present, hydro/nuclear absent
+  - Urban mask: Tyumen/Surgut/Novokuznetsk masked (was missed pre-fix), Yamal vacuum non-urban
+  - Per-type mask: Tambeyskoye centroid masked (50 km gas_field buffer applied), Tom-Usinsk masked (30 km), Vasyugan swamp + Mid-Yamal east + Yamal-north clean
+  - Per-type buffer distribution: 13×50km (gas_field) + 213×30km + 306×15km + 0×0km = 532 ✓ (matches manual classification table exactly)
+
+- **Recovery note:** initial Шаг 1 live execution had a lazy-evaluation bug (filtering deleted SOURCE_POINTS asset — fc.filter() referenced asset that no longer existed when Export evaluated). Recovered from archive_v1_pre_per_type snapshot. Documented в script с `# NOTE: lazy-evaluation hazard...` comment + TD-0028 candidate (always build new from archive after delete).
+
+- **TD-0024/TD-0025 verification в production:** all 4 new fresh runs (CH4 + NO2 + SO2 + per-type/urban scripts) use canonical Provenance pattern from build script start. Run IDs distinct per gas (one Provenance instance flows STARTED → submission → SUCCEEDED → asset metadata).
+
+- Rebuild status: 36 batch tasks LAUNCHED 2026-05-04, expected wall-clock 24-30 h. Final regional baselines pending.
+
 ### MC-2026-05-04-N — Phase 1c dual baseline cross-check validation (P-01.2)
 
 - Date: 2026-05-04

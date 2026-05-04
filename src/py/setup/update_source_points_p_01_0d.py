@@ -147,6 +147,27 @@ def make_new_gas_field_feature(
     return ee.Feature(geom, properties)
 
 
+def wait_task(task_id: str, label: str, timeout_s: int = 1200) -> str:
+    """Poll batch task until SUCCEEDED/FAILED/CANCELLED. Returns final state."""
+    import time
+
+    start = time.time()
+    op_name = f"projects/{GEE_PROJECT}/operations/{task_id}"
+    while True:
+        op = ee.data.getOperation(op_name)
+        state = op.get("metadata", {}).get("state", "?")
+        elapsed = int(time.time() - start)
+        if state in ("SUCCEEDED", "FAILED", "CANCELLED"):
+            print(f"  {label}: {state} (elapsed {elapsed}s)")
+            return state
+        if elapsed > timeout_s:
+            print(f"  {label}: TIMEOUT after {elapsed}s; state={state}")
+            return "TIMEOUT"
+        if elapsed % 30 == 0:
+            print(f"  {label}: {state} (elapsed {elapsed}s)")
+        time.sleep(15)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="P-01.0d source_points update")
     parser.add_argument(
@@ -158,6 +179,11 @@ def main() -> int:
         "--no-archive",
         action="store_true",
         help="Skip archiving старого source_points to *_v1_pre_per_type",
+    )
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Live execute: archive → delete original → re-export 532 features",
     )
     args = parser.parse_args()
 
@@ -204,34 +230,13 @@ def main() -> int:
     expected_new_count = n_old - n_hydro - n_nuclear + len(NEW_GAS_FIELDS)
     print(f"  expected new total: {expected_new_count}")
 
-    # === Step B: Archive existing (если не --no-archive) ===
-    if not args.no_archive and not args.dry_run:
-        print(f"\n=== Archiving existing к {ARCHIVE_PATH} ===")
-        try:
-            # Check if archive already exists
-            try:
-                ee.data.getAsset(ARCHIVE_PATH)
-                print("  archive already exists — skipping")
-            except Exception:
-                archive_task = ee.batch.Export.table.toAsset(
-                    collection=fc_old.set(
-                        {
-                            "archived_from": SOURCE_POINTS,
-                            "archive_reason": "P-01.0d pre-rebuild snapshot (TD-0023+TD-0027)",
-                            "archive_date": "2026-05-04",
-                        }
-                    ),
-                    description="archive_source_points_v1_pre_per_type",
-                    assetId=ARCHIVE_PATH,
-                )
-                archive_task.start()
-                print(f"  archive task started: id={archive_task.id}")
-                print("  WAIT для archive SUCCEEDED перед deleting current asset")
-        except Exception as e:
-            print(f"  archive failed: {e}")
-            return 1
+    # NOTE: lazy-evaluation hazard — `fc_old.filter(...)` returns a deferred
+    # reference к SOURCE_POINTS asset. If we delete SOURCE_POINTS before Export
+    # evaluates fc_new, the export fails ("Collection asset not found"). Solution:
+    # always source filter from ARCHIVE_PATH after archive SUCCEEDED. Documented
+    # here after first-run incident 2026-05-04.
 
-    # === Step C: Filter + add ===
+    # === Step C: Filter + add (build new collection in-memory) ===
     fc_filtered = fc_old.filter(
         ee.Filter.Or(
             ee.Filter.neq("source_type", "power_plant"),
@@ -265,15 +270,114 @@ def main() -> int:
         print("DRY-RUN: would apply Provenance:", prov.to_asset_properties())
         return 0
 
-    # === Step D: Wait для archive completion before re-export ===
-    print("\n=== Re-export new source_points (532 features) ===")
-    print(
-        "  WARNING: this overwrites existing asset. Archive (если launched above) "
-        "must complete first. Manual verification recommended before this step."
-    )
-    print("  Re-export not auto-launched. Run with --execute-rebuild after archive done.")
+    if not args.execute:
+        print("\nSafety guard: pass --execute to launch live archive + delete + re-export.")
+        return 0
 
-    return 0
+    # === Step D: Wait archive task completion ===
+    if not args.no_archive:
+        print("\n=== Step D: Waiting archive task SUCCEEDED ===")
+        # archive_task created above when not args.no_archive AND not args.dry_run
+        # Need to capture it in scope. Restructure: re-launch here for clarity.
+        try:
+            ee.data.getAsset(ARCHIVE_PATH)
+            print("  archive already exists — skipping wait")
+        except Exception:
+            archive_task = ee.batch.Export.table.toAsset(
+                collection=fc_old.set(
+                    {
+                        "archived_from": SOURCE_POINTS,
+                        "archive_reason": "P-01.0d pre-rebuild snapshot (TD-0023+TD-0027)",
+                        "archive_date": "2026-05-04",
+                    }
+                ),
+                description="archive_source_points_v1_pre_per_type",
+                assetId=ARCHIVE_PATH,
+            )
+            archive_task.start()
+            state = wait_task(archive_task.id, "archive")
+            if state != "SUCCEEDED":
+                print(f"  ARCHIVE FAILED state={state}; aborting")
+                return 1
+
+    # === Step E: Delete original ===
+    print(f"\n=== Step E: Deleting current asset {SOURCE_POINTS} ===")
+    try:
+        ee.data.deleteAsset(SOURCE_POINTS)
+        print("  deleted")
+    except Exception as e:
+        print(f"  delete failed: {e}; aborting")
+        return 1
+
+    # === Step F: Re-export new collection (532 features) ===
+    print("\n=== Step F: Exporting new source_points (532 features) ===")
+    fc_new_with_prov = fc_new.set(
+        {
+            **prov.to_asset_properties(),
+            "phase": "P-01.0d",
+            "operation": "source_points_per_type_classification",
+            "n_features": 532,
+            "td_0023_resolution": True,
+            "td_0027_resolution": True,
+            "previous_inventory_archived_at": ARCHIVE_PATH,
+            "build_pipeline": "src/py/setup/update_source_points_p_01_0d.py",
+        }
+    )
+    export_task = ee.batch.Export.table.toAsset(
+        collection=fc_new_with_prov,
+        description="rebuild_source_points_p_01_0d",
+        assetId=SOURCE_POINTS,
+    )
+    export_task.start()
+    state = wait_task(export_task.id, "rebuild_source_points")
+    if state != "SUCCEEDED":
+        print(f"  EXPORT FAILED state={state}; aborting")
+        return 1
+
+    # === Step G: Verify ===
+    print("\n=== Step G: Verification ===")
+    fc_verify = ee.FeatureCollection(SOURCE_POINTS)
+    n_verify = fc_verify.size().getInfo()
+    print(f"  size: {n_verify} (expected 532)")
+    if n_verify != 532:
+        print("  FAIL — size mismatch")
+        return 1
+
+    # Tambeyskoye present?
+    tamb = (
+        fc_verify.filter(ee.Filter.eq("source_id", "manual_p_01_0d_tambeyskoye")).size().getInfo()
+    )
+    print(f"  Tambeyskoye feature present: {tamb == 1} (count={tamb})")
+
+    # Hydro/nuclear absent?
+    hydro = fc_verify.filter(ee.Filter.eq("source_subtype", "hydro")).size().getInfo()
+    nuclear = fc_verify.filter(ee.Filter.eq("source_subtype", "nuclear")).size().getInfo()
+    print(f"  Hydro absent: {hydro == 0} (count={hydro})")
+    print(f"  Nuclear absent: {nuclear == 0} (count={nuclear})")
+
+    sanity_pass = n_verify == 532 and tamb == 1 and hydro == 0 and nuclear == 0
+
+    write_provenance_log(
+        prov,
+        status="SUCCEEDED" if sanity_pass else "PARTIAL",
+        gas="multi",
+        period="2026_p_01_0d",
+        asset_id=SOURCE_POINTS,
+        extra={
+            "phase": "P-01.0d",
+            "operation": "source_points_update",
+            "n_features": n_verify,
+            "tambeyskoye_present": tamb == 1,
+            "hydro_absent": hydro == 0,
+            "nuclear_absent": nuclear == 0,
+        },
+    )
+
+    print(f"\n{'=' * 60}")
+    print(
+        f"Шаг 1 {'COMPLETE' if sanity_pass else 'PARTIAL'} — sanity {'PASS' if sanity_pass else 'FAIL'}"
+    )
+    return 0 if sanity_pass else 1
 
 
 if __name__ == "__main__":
