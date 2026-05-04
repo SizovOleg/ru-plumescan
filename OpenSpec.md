@@ -584,6 +584,60 @@ existing architectural decisions. Документируются здесь дл
   4 months fail. Phase B Export batch task TBD (FAIL on first attempt с
   null-constant error — fixed via valid-zones filter + `--phase-b-only` flag).
 
+### MC-2026-05-04-N — Phase 1c dual baseline cross-check validation (P-01.2)
+
+- Date: 2026-05-04
+- Type: Phase 1c deliverable (analysis only, no batch compute beyond Δ export)
+- Affected:
+  - `RuPlumeScan/analysis/dual_baseline_delta_CH4_M07` LIVE
+  - `RuPlumeScan/analysis/dual_baseline_delta_CH4_M10` LIVE
+  - Run ID: `default_2019_2025_41b83bfd` (canonical Provenance, shared между M07+M10 — same Run produces both)
+
+**Outputs:**
+- `docs/p-01.2_stats.json` — formal statistics (mean/var |Δ|, per-zone, Moran's I, Hartigan's dip)
+- `docs/p-01.2_grid_samples.json` — 0.5° grid raw Δ samples (3500 cells)
+- `docs/p-01.2_transect_75E.json` — fine 0.1° latitude transect (251 points)
+- `docs/p-01.2_suspect_regions_M07.geojson` (195 clusters) + `_M10.geojson` (221 clusters)
+- `docs/p-01.2_phase_2a_handoff.md` — concrete parametric recommendations
+- `docs/p-01.2_figure_1.png` — tool-paper 4-panel publication-quality (300 DPI)
+
+**Synthetic test (Шаг 1 sanity gate):** PASSED — all 3 patterns (Δ=10, 30, 50 ppb at 3 latitude bands) recovered с |err| = 0.0000 ppb (well under 0.01 tolerance). Pipeline correctness confirmed perед real data analysis.
+
+**Statistics summary:**
+- M07: n=2682 valid (3500 grid total), mean |Δ|=19.42 ppb, Moran's I=0.736 (p=0.001), Hartigan dip p=0.035 (borderline bimodal)
+- M10: n=2601, mean |Δ|=14.49 ppb, Moran's I=0.716 (p=0.001), Hartigan dip p=0.067 (unimodal-consistent)
+
+**Zone-boundary step quantification (TD-0021):**
+- 57.5°N (Kuznetsky → Yugansky): step_M07 = +34.85 ppb, step_M10 = +19.83 ppb
+- 62.0°N (Yugansky → Verkhne-Tazovsky): step_M07 = −16.18 ppb, step_M10 = +1.82 ppb
+
+**Top-5 suspect clusters M07 (mean Δ ≥ 54 ppb):**
+1. (68.74°N, 60.07°E) area 89 km², mean Δ=80.3 ppb (max 111.6) — Yamal-Nenets
+2. (74.52°N, 79.55°E) area 104 km², mean Δ=60.4 ppb — Kara Sea coast
+3. (54.45°N, 94.37°E) area 142 km², mean Δ=60.1 ppb — Krasnoyarsk eastern edge
+4. (74.08°N, 83.70°E) area 161 km², mean Δ=59.6 ppb — Tambeyskoye gas field region
+5. (53.73°N, 94.47°E) area 145 km², mean Δ=54.2 ppb — Krasnoyarsk eastern edge
+
+**Article t1 partial comparison (TD-0022):**
+- Zone 4 (Middle taiga 60-63°N): article 1854 ppb vs наш ref_mean 1870.5 ppb, Δ = +16.5 ppb (consistent с P-01.0b extrapolation finding +19 ppb). Confirmed match.
+- Zone 1 (Tundra 67-72°N) + Zone 8 (Steppe 52-55°N): article numbers недоступны → deferred к follow-up.
+
+**Methodology caveats (для tool-paper):**
+- High Moran's I (0.74) reflects dual baseline architecture's inherent properties — zone band step changes + clustered suspect regions. Не a methodology bug. Document как expected.
+- Borderline bimodality (dip p=0.035 M07) consistent с two-population mixture (zone-aligned + suspect-cluster pixels). Acceptable.
+- Single-longitude transect (75°E) limits boundary-step analysis. Future deeper analysis может sample multiple longitudes.
+
+**Citations:**
+- PySAL ecosystem: Rey & Anselin 2010 (для Moran's I)
+- Hartigan & Hartigan 1985 (для dip test)
+
+**TD updates (cumulative):**
+- TD-0017 (transboundary): clusters 3+5 в Krasnoyarsk eastern edge support hypothesis — flagged для Phase 2A HYSPLIT check
+- TD-0018 (Kuzbass): suspect clusters mapped, top-5 + Kuzbass-specific z_min=4.0 in handoff
+- TD-0019 (extrapolation): reconfirmed — distance не predicts |Δ|; constant distance_factor=1.0 в handoff
+- TD-0021 (zone-boundary): step sizes quantified (34.85, 16.18 ppb) — handoff specifies smoothing window 2°, trigger ≤ 100 km from boundary
+- TD-0022: Zone 4 partial match confirmed. Zones 1+8 deferred.
+
 ### MC-2026-05-03-M — TD-0024 provenance hardening (P-01.0c)
 
 - Date: 2026-05-03

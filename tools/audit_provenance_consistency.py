@@ -100,6 +100,7 @@ def list_audited_assets(project: str) -> list[str]:
         f"{asset_root}/catalog/CH4",
         f"{asset_root}/catalog/NO2",
         f"{asset_root}/catalog/SO2",
+        f"{asset_root}/analysis",  # P-01.2 dual baseline cross-check Δ assets
     ]
 
     asset_ids: list[str] = []
