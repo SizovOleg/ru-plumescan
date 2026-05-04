@@ -612,7 +612,14 @@ existing architectural decisions. Документируются здесь дл
   | regional_NO2_2019_2025 | `7c2f8b2b...` | `646b4e97...` | BACKFILLED + VERIFIED + logged |
   | regional_SO2_2019_2025 | `f669e1c8...` | `71f18f76...` | BACKFILLED + VERIFIED + logged |
 
-- **Deviation from DevPrompt:** NO₂ originally marked as "verify-only" в DevPrompt (was internally consistent `7c2f8b2b` STARTED=SUCCEEDED=asset). Dry-run revealed canonical reconstruction yields different hash because runtime config dict (used by closeout_phase_1b.py) differed slightly from canonical reconstruction (built from `build_regional_climatology.py` source code state). Backfilled NO₂ к canonical schema for consistency across all 4 baseline assets. Каждый backfilled asset documents pre-backfill hash via `pre_backfill_params_hash` property — original runtime hash preserved для forensic audit.
+- **NO₂ canonical reconstruction — unexpected stronger outcome (NOT mere deviation):**  
+  DevPrompt classified NO₂ as «already OK, verify only» based on internally consistent runtime hash `7c2f8b2b` (STARTED=SUCCEEDED=asset). Dry-run reconstruction from `build_regional_climatology.py` source code state produced **different** canonical hash `646b4e97`. **This means**:
+  - **All 4 baseline assets used non-canonical configs** (4 different Runs, 4 different config-dict assemblies). Asset/log internal consistency was NOT canonical correctness.
+  - **Two separate code paths computed configs independently** для same Run: `build_regional_climatology.py` (runtime build, set partial metadata via `combined.set({...})`) и `closeout_phase_1b.py` (closure script computed hash from re-assembled config + `setAssetProperties` post-hoc).
+  - The audit categorization of NO₂ as «OK» только caught log-asset internal consistency; не caught the deeper canonical-vs-runtime divergence.
+  - Backfill standardized all 4 к canonical schema reconstructed from build script source. **Stronger outcome than DevPrompt scope anticipated** — full canonical alignment, not just compliance restoration.
+  - Original runtime hashes preserved as `pre_backfill_params_hash` для forensic audit.
+  - **Implication для Phase 2A:** TD-0025 NEW filed — `compute_provenance` MUST integrate directly into build scripts, no separate closure-script hash computation. Detection events need build-script-native provenance.
 - **Honest reconstruction caveat** на каждом backfilled asset (`provenance_backfill_caveat` field):
   > "Reconstructed canonical config from build script source code at commit `<sha>` + RNA v1.2 defaults + algorithm_version 2.3 parameters. params_hash recomputed via centralized compute_provenance helper. KNOWN UNCERTAINTY: runtime config may have included parameters не captured в reconstruction. Original log entries preserved в logs/runs.jsonl. For bit-identical reproduction, refer к commit SHA + RNA version, не just params_hash."
 - Audit gate enforcement: `python tools/audit_provenance_consistency.py` PASSED post-backfill (4/4 OK, allowlist empty). `--no-gee` mode also PASSED (allowlist + log schema valid).

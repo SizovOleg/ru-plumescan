@@ -309,8 +309,49 @@ Each Run следует этому pattern для DNA §2.1 запрет 12 comp
 **Audit:** `tools/audit_provenance_consistency.py` CI gate enforces consistency:
 - Каждый baseline/catalog asset имеет provenance triple
 - Asset.params_hash matches at least one log entry с matching run_id
+- Empty allowlist policy after P-01.0c — strict CI gate
 
-Per TD-0024 (resolved 2026-05-XX): `params_hash` recomputation в parallel code paths is forbidden — it caused hash drift между runtime config dicts. Going forward, only the centralized helpers above are allowed.
+#### Anti-patterns (prohibited — these caused TD-0024)
+
+| ❌ Anti-pattern | ✓ Required pattern |
+|-----------------|---------------------|
+| **Calling `compute_provenance(...)` multiple times for the same Run** (e.g., once в build script, once в closure script) | Compute **ONCE** at process start. Pass returned `Provenance` object к все subsequent operations. |
+| **Reassembling config dict в closure / monitoring / report scripts** with «similar» keys | Closure scripts MUST receive Provenance object из upstream pipeline (file, env var, or function argument). Never recompute hash from re-assembled config. |
+| **Mutating config dict** between hash computation и asset metadata write | `Provenance` dataclass `frozen=True` enforces this structurally. Never bypass с `dataclasses.replace()` mid-Run. |
+| **Calling `hashlib.sha256` или `json.dumps` directly на config** | Always use `compute_provenance` / `canonical_serialize`. Direct hashing skips order-normalization → drift. |
+| **Computing `params_hash` for STARTED log с config A, then asset metadata с config B** ("close-but-different" dicts) | Same Provenance object flows through. STARTED, SUCCEEDED logs, и `setAssetProperties` все consume same instance. |
+| Letting build script set asset metadata via `combined.set({...})` без provenance fields, then closure script bolts them on later | Build script must integrate `compute_provenance` natively. See TD-0025 follow-up. |
+
+**Concrete code example** demonstrating canonical pattern:
+
+```python
+from rca.provenance import compute_provenance, write_provenance_log
+import ee
+
+# === ONCE at process start ===
+config = build_config_from_preset_name(args.preset)  # full Configuration dict
+prov = compute_provenance(config, config_id=args.preset, period="2019_2025")
+
+# === STARTED log (immediately after) ===
+write_provenance_log(prov, status="STARTED", gas=args.gas, period="2019_2025",
+                     asset_id=final_asset_path)
+
+# === Submission (Provenance не recomputed) ===
+task = ee.batch.Export.image.toAsset(image=combined, assetId=final_asset_path, ...)
+task.start()
+
+# === Post-completion ===
+ee.data.setAssetProperties(final_asset_path, prov.to_asset_properties())
+write_provenance_log(prov, status="SUCCEEDED", gas=args.gas, period="2019_2025",
+                     asset_id=final_asset_path, extra={"n_tasks": 12})
+```
+
+**Enforcement:** `tools/audit_provenance_consistency.py` runs на every PR (CI) и detects:
+- Asset missing provenance triple → fail
+- Asset hash не matches any log entry с same run_id → fail (suggests parallel computation drift)
+- Allowlist mechanism для phased remediation; strict empty allowlist policy в production.
+
+Per TD-0024 (resolved 2026-05-03): `params_hash` recomputation в parallel code paths is forbidden — it caused hash drift между runtime config dicts. Going forward, only the centralized helpers above are allowed. TD-0025 tracks integration of `compute_provenance` directly into build scripts (still pending для Phase 2A pre-implementation).
 
 ```
 1. User selects Configuration Preset

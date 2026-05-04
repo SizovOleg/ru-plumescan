@@ -595,14 +595,53 @@ write_provenance_log(prov, status="SUCCEEDED", gas="CH4", period="2019_2025",
 
 **Frozen dataclass invariant:** `Provenance` is `@dataclass(frozen=True)`. Same Provenance object reference passes через STARTED → submit → SUCCEEDED → asset properties. Mutation prevented at construction.
 
-**Existing baseline assets backfilled** via `src/py/setup/backfill_provenance.py` (P-01.0c, 2026-05-XX) для DNA §2.1 запрет 12 compliance restoration. Каждый backfilled asset имеет:
+#### Anti-patterns (prohibited — these caused TD-0024)
+
+Future code (LLM-generated или human-written) is most likely to recreate TD-0024 root cause если this section ignored. **Read carefully перед writing новых scripts**:
+
+1. **Не recompute `params_hash` в parallel scripts.** TD-0024 NO₂ case study: build script computed config A, closure script computed config B (similar but not identical), asset got A's hash but log got B's hash. Audit caught it post-hoc. **Always pass Provenance object downstream**, never reassemble config + recompute.
+
+2. **Не reassemble config dict в closure / monitoring / orchestration scripts.** Closure scripts должны receive Provenance via:
+   - Function argument from caller pipeline
+   - Saved JSON state file (pickled or serialized form of `Provenance`)
+   - Re-read from `logs/runs.jsonl` (search by run_id)
+   
+   Never «rebuild similar config dict» — even one-key drift produces different hash.
+
+3. **Не bypass `frozen=True` с `dataclasses.replace()` mid-Run.** If you need different provenance — that's a different Run, compute fresh `Provenance` object с different config_id.
+
+4. **Не call `hashlib.sha256(json.dumps(...))` directly.** Always через `compute_provenance` / `canonical_serialize`. Direct hashing skips:
+   - `sort_keys=True` (dict ordering matters)
+   - `separators=(',', ':')` (whitespace matters)
+   - `default=str` (datetime objects matter)
+
+5. **Не set asset properties via `image.set({...})` без provenance fields.** Build scripts MUST embed `prov.to_asset_properties()` natively at Export time. (TD-0025 tracks integrating this в `build_regional_climatology.py` — still pending.)
+
+#### Required pattern recap
+
+```python
+# === ONCE per Run ===
+prov = compute_provenance(config, config_id, period)
+
+# === Каждый touchpoint reuses same Provenance ===
+write_provenance_log(prov, status="STARTED", ...)
+# ... pipeline work ...
+ee.data.setAssetProperties(asset_id, prov.to_asset_properties())  # NOT image.set
+write_provenance_log(prov, status="SUCCEEDED", ...)
+```
+
+**Existing baseline assets backfilled** via `src/py/setup/backfill_provenance.py` (P-01.0c, 2026-05-03) для DNA §2.1 запрет 12 compliance restoration. Каждый backfilled asset имеет:
 - `provenance_backfill_date`
 - `provenance_backfill_caveat` (honest reconstruction limitations)
 - `provenance_backfill_commit` (P-01.0c PR commit SHA)
 - `provenance_backfill_source_commit` (build script source commit)
 - `pre_backfill_params_hash` (если был)
 
-Future runs: provenance native (no backfill needed). Audit script `tools/audit_provenance_consistency.py` runs в CI (`--no-gee` mode validates allowlist + log schema; full GEE audit requires service account credentials, currently local-only).
+**Enforcement:** `tools/audit_provenance_consistency.py` runs в CI (`--no-gee` mode validates allowlist + log schema; full GEE audit requires service account credentials, currently local-only — TD-0026 tracks GitHub secret setup). Audit fails on:
+- Asset missing provenance triple
+- Asset hash не matches any log entry с same run_id (parallel-computation-drift signature)
+
+Future runs: provenance native (no backfill needed) once TD-0025 lands. Until then — closure scripts MUST receive Provenance from upstream, не reassemble config.
 
 ---
 
