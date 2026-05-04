@@ -9,3 +9,10 @@ pyproj>=3.6
 scipy>=1.11
 numpy>=1.24
 pydantic>=2.5
+# Phase 1c (P-01.2) dual baseline statistical analysis dependencies
+# Cite Rey & Anselin 2010 для PySAL в tool-paper.
+matplotlib>=3.7
+geopandas>=0.14
+libpysal>=4.10
+esda>=2.5
+diptest>=0.7

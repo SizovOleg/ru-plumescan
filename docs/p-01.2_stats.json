@@ -1,0 +1,156 @@
+{
+  "phase": "P-01.2",
+  "executed_at": "2026-05-04T03:19:00.001455+00:00",
+  "run_id": "default_2019_2025_41b83bfd",
+  "params_hash": "41b83bfdf2cee1e298cdfb462f4c369c9d30ab04fae62095b06c47121a4000c6",
+  "config_id": "default",
+  "months_analyzed": [
+    "M07",
+    "M10"
+  ],
+  "export_tasks": {
+    "M07": {
+      "task_id": "IG5LQA2PY4TVIAVIRKMQWA2W",
+      "asset_id": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/analysis/dual_baseline_delta_CH4_M07"
+    },
+    "M10": {
+      "task_id": "SWHHOEKOL2QCOUHU3TR5TYPH",
+      "asset_id": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/analysis/dual_baseline_delta_CH4_M10"
+    }
+  },
+  "grid_n_total": 3500,
+  "statistics": {
+    "months": {
+      "M07": {
+        "n_valid": 2682,
+        "n_total_grid": 3500,
+        "mean_delta_ppb": 14.101527143119652,
+        "mean_abs_delta_ppb": 19.423510007072277,
+        "median_abs_delta_ppb": 16.405677935696417,
+        "var_abs_delta_ppb": 205.77537309899927,
+        "max_abs_delta_ppb": 102.05490134013144,
+        "per_zone": {
+          "kuznetsky_alatau": {
+            "n": 840,
+            "mean_delta_ppb": 33.17674188161521,
+            "mean_abs_delta_ppb": 33.606786778845844,
+            "median_abs_delta_ppb": 34.0193359298886,
+            "std_delta_ppb": 11.36117081104703
+          },
+          "yugansky": {
+            "n": 533,
+            "mean_delta_ppb": -7.040977774718714,
+            "mean_abs_delta_ppb": 12.606436793892415,
+            "median_abs_delta_ppb": 10.90438192085071,
+            "std_delta_ppb": 14.120030652993897
+          },
+          "verkhne_tazovsky": {
+            "n": 1309,
+            "mean_delta_ppb": 10.469575073502833,
+            "mean_abs_delta_ppb": 13.097725082958501,
+            "median_abs_delta_ppb": 10.297035013621326,
+            "std_delta_ppb": 13.945036271459996
+          }
+        },
+        "morans_I": {
+          "I": 0.7364759716420369,
+          "expected_I": -0.0003729951510630362,
+          "z_score": 76.5743080363405,
+          "p_value_simulated": 0.001,
+          "n_observations": 2682,
+          "weights_method": "KNN k=8 row-standardized"
+        },
+        "hartigan_dip": {
+          "dip_statistic": 0.010882961874831948,
+          "p_value": 0.03541938182050075,
+          "interpretation": "bimodal_likely"
+        }
+      },
+      "M10": {
+        "n_valid": 2601,
+        "n_total_grid": 3500,
+        "mean_delta_ppb": 0.5340916799424356,
+        "mean_abs_delta_ppb": 14.489408495341724,
+        "median_abs_delta_ppb": 12.598021759396488,
+        "var_abs_delta_ppb": 116.70476473227527,
+        "max_abs_delta_ppb": 74.49028163518665,
+        "per_zone": {
+          "kuznetsky_alatau": {
+            "n": 841,
+            "mean_delta_ppb": 18.32154552692604,
+            "mean_abs_delta_ppb": 20.291909317279423,
+            "median_abs_delta_ppb": 19.53812693753389,
+            "std_delta_ppb": 13.788429623727469
+          },
+          "yugansky": {
+            "n": 529,
+            "mean_delta_ppb": -6.8621223567163385,
+            "mean_abs_delta_ppb": 11.861789955323635,
+            "median_abs_delta_ppb": 9.14152368879536,
+            "std_delta_ppb": 14.342428998961697
+          },
+          "verkhne_tazovsky": {
+            "n": 1231,
+            "mean_delta_ppb": -8.439630058417208,
+            "mean_abs_delta_ppb": 11.654402009898964,
+            "median_abs_delta_ppb": 9.423989623832313,
+            "std_delta_ppb": 12.292276676097439
+          }
+        },
+        "morans_I": {
+          "I": 0.7160697567183902,
+          "expected_I": -0.0003846153846153846,
+          "z_score": 71.41679917913372,
+          "p_value_simulated": 0.001,
+          "n_observations": 2601,
+          "weights_method": "KNN k=8 row-standardized"
+        },
+        "hartigan_dip": {
+          "dip_statistic": 0.010283636274790234,
+          "p_value": 0.0672040792918781,
+          "interpretation": "unimodal_consistent"
+        }
+      }
+    },
+    "citations": {
+      "pysal": "Rey & Anselin 2010",
+      "diptest": "Hartigan & Hartigan 1985"
+    }
+  },
+  "boundary_step_quantification": {
+    "boundary_57.5N": {
+      "boundary_lat": 57.5,
+      "n_below": 20,
+      "n_above": 20,
+      "step_M07_ppb": 34.85346760332072,
+      "mean_below_M07": 1845.5267091943747,
+      "mean_above_M07": 1880.3801767976954,
+      "step_M10_ppb": 19.82769074411226,
+      "mean_below_M10": 1872.2182448471656,
+      "mean_above_M10": 1892.0459355912778
+    },
+    "boundary_62.0N": {
+      "boundary_lat": 62.0,
+      "n_below": 20,
+      "n_above": 20,
+      "step_M07_ppb": -16.175139982148494,
+      "mean_below_M07": 1880.3801767976954,
+      "mean_above_M07": 1864.205036815547,
+      "step_M10_ppb": 1.815585772726763,
+      "mean_below_M10": 1892.0459355912778,
+      "mean_above_M10": 1893.8615213640046
+    }
+  },
+  "article_t1_partial_comparison": {
+    "Zone 4 (Middle taiga 60-63N)": {
+      "article_ppb": 1854,
+      "lat_range": [
+        60,
+        63
+      ],
+      "n_grid_cells": 420,
+      "note": "Reference value comparison requires separate sampling — see Phase 2A handoff"
+    },
+    "TD-0022 status": "partial — Zone 4 only; Zones 1 (Tundra 67-72°N) + 8 (Steppe 52-55°N) pending article numbers"
+  }
+}

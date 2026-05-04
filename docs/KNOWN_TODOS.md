@@ -39,6 +39,25 @@ deferrals**, не для architectural changes.
 
 ---
 
+## TD-0027 NEW — Industrial buffer per source type (large gas fields) **[Phase 2A pre-implementation]**
+
+- **Origin:** P-01.2 closure 2026-05-04 — Tambeyskoye cluster #4 (74.08°N, 83.70°E, area 161 km², mean Δ=59.6 ppb) revealed default 30 km buffer insufficient для major gas fields.
+- **Status:** OPEN — Phase 2A pre-implementation investigation.
+- **Issue:** Current `proxy_mask_buffered_30km` applies uniform 30 km buffer для всех industrial proxy points. P-01.2 dual baseline cross-check showed:
+  - **Tambeyskoye gas field** (cluster #4 M07): mean Δ=59.6 ppb residual после 30 km masking — gas field area extends beyond mask.
+  - Likely affects other major fields: Bovanenkovo (68.4°N, 70.4°E), Yamburg (67.5°N, 75.0°E), Yuzhno-Russkoye, Urengoy.
+- **Hypothesis:** Large gas fields (extraction infrastructure spans 50-100 km, не point sources) need wider buffer ~50 km vs 30 km default. Small TPP / refineries may stay at 30 km.
+- **Investigation deliverables (Phase 2A pre-implementation):**
+  - Per-source-type buffer mapping (e.g., `gas_field` → 50 km, `tpp_gres` → 30 km, `refinery` → 25 km, `compressor_station` → 15 km)
+  - Asset attribute `source_type` в `RuPlumeScan/industrial/source_points` (currently не differentiated)
+  - Build new Asset `proxy_mask_buffered_per_source_type` с heterogeneous buffer
+  - Cross-check: re-run dual baseline analysis с new buffer, verify Tambeyskoye + similar gas fields no longer appear как suspect clusters
+- **Trigger:** Phase 2A design DevPrompt — discuss с TD-0023 (urban masking) architectural revision since both involve mask refinement.
+- **Effort:** ~1-2 days (source classification + new mask Asset build via Option C orchestrator if needed).
+- **Related:** TD-0023 (urban masking), TD-0011 (prebuilt mask infrastructure).
+
+---
+
 ## TD-0026 NEW — Setup GEE service account для CI full audit **[HIGH PRIORITY]**
 
 - **Origin:** P-01.0c CI workflow setup 2026-05-03 (escalation per researcher directive «If auth setup needs manual configuration — escalate, не assume»).
@@ -246,7 +265,8 @@ validation evidence что constant L=1.32 занижает accuracy.
 ## TD-0017 NEW — Transboundary transport contamination (Krasnoyarsk → western AOI)
 
 - **Origin:** P-01.0b CR review CLAIM 3 fix 2026-04-29
-- **Status:** documented caveat
+- **Status:** documented caveat — **partial empirical support от P-01.2** (suspect clusters #3 + #5 located eastern edge AOI 94°E in Krasnoyarsk Krai)
+- **Phase 1c finding (P-01.2):** Top-5 suspect clusters M07 include 2 sites at lon ≈ 94°E (54.45°N + 53.73°N), mean Δ = 54-60 ppb. Could be undocumented sources OR transboundary transport from Krasnoyarsk industrial cluster eastward. **Phase 2A action filed:** HYSPLIT back-trajectory check для events с centroid at lat∈[53,56], lon ≥ 92.
 - **Observation:** Krasnoyarsk industrial cluster (Krasnoyarskaya GRES-2 1250 MW
   + 3 более) в 90-95°E band added to `industrial/source_points` v2 (CLAIM 3
   fix). Industrial mask now excludes these points. Но при favorable easterly
@@ -260,10 +280,11 @@ validation evidence что constant L=1.32 занижает accuracy.
 
 ---
 
-## TD-0018 NEW — Kuzbass detection caveat (mask gap pre-fix + low Kuz-Alatau counts)
+## TD-0018 NEW — Kuzbass detection caveat (mask gap pre-fix + low Kuz-Alatau counts) **[suspect clusters mapped]**
 
 - **Origin:** P-01.0b CR review CLAIM 3 + MC-2026-04-29-I 2026-04-29
-- **Status:** **HIGH severity для Phase 2A в Kuzbass region**
+- **Status:** **HIGH severity для Phase 2A в Kuzbass region** — **suspect clusters mapped P-01.2 2026-05-04**
+- **Phase 1c finding (P-01.2):** 195 suspect clusters M07, 221 M10 across full AOI. Kuzbass-specific (lat 53-55°N, lon 86-88°E) clusters identified в `docs/p-01.2_suspect_regions_M07.geojson` + `_M10.geojson`. Phase 2A handoff specifies z_min=4.0 для этой region + manual review trigger для events с `nearest_source_id=null` near top-5 clusters.
 - **Observation:** Primary CH₄ detection target region (regression baseline
   Кузбасс 2022-09-20 per CLAUDE §5.1) has compounded uncertainty:
   - **Industrial mask gap pre-fix:** 4 major Kuzbass plants (Tom-Usinsk,
@@ -333,7 +354,15 @@ validation evidence что constant L=1.32 занижает accuracy.
 
 ---
 
-## TD-0021 NEW — Zone-boundary detection sensitivity (CH₄ Phase 2A)
+## TD-0021 NEW — Zone-boundary detection sensitivity (CH₄ Phase 2A) **[steps quantified, handoff complete]**
+
+**P-01.2 update (2026-05-04):** Step sizes quantified at 75°E transect (0.1° resolution):
+- Boundary 57.5°N (Kuznetsky → Yugansky): step_M07 = +34.85 ppb, step_M10 = +19.83 ppb
+- Boundary 62.0°N (Yugansky → Verkhne-Taz): step_M07 = −16.18 ppb, step_M10 = +1.82 ppb
+
+Phase 2A mitigation parameters specified в `docs/p-01.2_phase_2a_handoff.md`: smoothing window 2°, trigger ≤ 100 km from boundary, optional CHANGE-0018 (distance-weighted blend nearest-2 zones) deferred.
+
+### Original TD-0021 issue (preserved):
 
 - **Origin:** P-01.0b extrapolation investigation 2026-04-29 (TD-0019
   resolution + latitude transect at 75°E findings).
@@ -361,7 +390,11 @@ validation evidence что constant L=1.32 занижает accuracy.
 
 ---
 
-## TD-0022 NEW — Article t1 full zonal-stats comparison (Phase 1c validation)
+## TD-0022 NEW — Article t1 full zonal-stats comparison (Phase 1c validation) **[Zone 4 confirmed; Zones 1+8 deferred]**
+
+**P-01.2 partial closure (2026-05-04):** Zone 4 (Middle taiga 60-63°N) confirmed: article 1854 ppb vs наш ref_mean 1870.5 ppb, Δ +16.5 ppb plausibly explained by wetland-only article extent vs full-band our reference. Zones 1+8 article numbers недоступны → **deferred** к follow-up или Phase 6 validation campaign.
+
+### Original TD-0022 issue (preserved):
 
 - **Origin:** P-01.0b extrapolation investigation 2026-04-29 — partial
   comparison only (Zone 4 confirmed +19 ppb plausible per period+biome
