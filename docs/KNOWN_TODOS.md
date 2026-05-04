@@ -39,6 +39,25 @@ deferrals**, не для architectural changes.
 
 ---
 
+## TD-0027 NEW — Industrial buffer per source type (large gas fields) **[Phase 2A pre-implementation]**
+
+- **Origin:** P-01.2 closure 2026-05-04 — Tambeyskoye cluster #4 (74.08°N, 83.70°E, area 161 km², mean Δ=59.6 ppb) revealed default 30 km buffer insufficient для major gas fields.
+- **Status:** OPEN — Phase 2A pre-implementation investigation.
+- **Issue:** Current `proxy_mask_buffered_30km` applies uniform 30 km buffer для всех industrial proxy points. P-01.2 dual baseline cross-check showed:
+  - **Tambeyskoye gas field** (cluster #4 M07): mean Δ=59.6 ppb residual после 30 km masking — gas field area extends beyond mask.
+  - Likely affects other major fields: Bovanenkovo (68.4°N, 70.4°E), Yamburg (67.5°N, 75.0°E), Yuzhno-Russkoye, Urengoy.
+- **Hypothesis:** Large gas fields (extraction infrastructure spans 50-100 km, не point sources) need wider buffer ~50 km vs 30 km default. Small TPP / refineries may stay at 30 km.
+- **Investigation deliverables (Phase 2A pre-implementation):**
+  - Per-source-type buffer mapping (e.g., `gas_field` → 50 km, `tpp_gres` → 30 km, `refinery` → 25 km, `compressor_station` → 15 km)
+  - Asset attribute `source_type` в `RuPlumeScan/industrial/source_points` (currently не differentiated)
+  - Build new Asset `proxy_mask_buffered_per_source_type` с heterogeneous buffer
+  - Cross-check: re-run dual baseline analysis с new buffer, verify Tambeyskoye + similar gas fields no longer appear как suspect clusters
+- **Trigger:** Phase 2A design DevPrompt — discuss с TD-0023 (urban masking) architectural revision since both involve mask refinement.
+- **Effort:** ~1-2 days (source classification + new mask Asset build via Option C orchestrator if needed).
+- **Related:** TD-0023 (urban masking), TD-0011 (prebuilt mask infrastructure).
+
+---
+
 ## TD-0026 NEW — Setup GEE service account для CI full audit **[HIGH PRIORITY]**
 
 - **Origin:** P-01.0c CI workflow setup 2026-05-03 (escalation per researcher directive «If auth setup needs manual configuration — escalate, не assume»).
