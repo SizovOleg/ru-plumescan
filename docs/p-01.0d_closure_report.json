@@ -1,0 +1,242 @@
+{
+  "phase": "P-01.0d",
+  "closed_at": "2026-05-05T05:28:12",
+  "final_assets": {
+    "CH4": {
+      "asset": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/regional_CH4_2019_2025",
+      "n_bands": 36,
+      "n_properties": 21,
+      "config_id": "default",
+      "params_hash_8": "c59117e7",
+      "run_id": "default_2019_2025_c59117e7",
+      "mask_mode": "per_type_buffered",
+      "urban_mask_applied": null
+    },
+    "NO2": {
+      "asset": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/regional_NO2_2019_2025",
+      "n_bands": 36,
+      "n_properties": 21,
+      "config_id": "default",
+      "params_hash_8": "aadf698c",
+      "run_id": "default_2019_2025_aadf698c",
+      "mask_mode": "per_type_buffered",
+      "urban_mask_applied": null
+    },
+    "SO2": {
+      "asset": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/regional_SO2_2019_2025",
+      "n_bands": 36,
+      "n_properties": 21,
+      "config_id": "default",
+      "params_hash_8": "316cf9ca",
+      "run_id": "default_2019_2025_316cf9ca",
+      "mask_mode": "per_type_buffered",
+      "urban_mask_applied": null
+    }
+  },
+  "sanity": {
+    "CH4": [
+      {
+        "gas": "CH4",
+        "name": "Tambeyskoye centroid",
+        "lat": 71.55,
+        "lon": 71.6,
+        "expected": "masked",
+        "value": null,
+        "is_nan": true,
+        "pass": true,
+        "note": "",
+        "why": "gas_field 50km"
+      },
+      {
+        "gas": "CH4",
+        "name": "Bovanenkovskoye (TD-0020)",
+        "lat": 70.4,
+        "lon": 68.4,
+        "expected": "masked",
+        "value": null,
+        "is_nan": true,
+        "pass": true,
+        "note": "",
+        "why": "gas_field 50km"
+      },
+      {
+        "gas": "CH4",
+        "name": "Tom-Usinsk GRES",
+        "lat": 53.78,
+        "lon": 87.59,
+        "expected": "masked",
+        "value": null,
+        "is_nan": true,
+        "pass": true,
+        "note": "",
+        "why": "tpp_gres 30km"
+      },
+      {
+        "gas": "CH4",
+        "name": "Tyumen city",
+        "lat": 57.15,
+        "lon": 65.55,
+        "expected": "masked",
+        "value": null,
+        "is_nan": true,
+        "pass": true,
+        "note": "CH4 не uses urban mask; result varies",
+        "why": "urban + tpp"
+      },
+      {
+        "gas": "CH4",
+        "name": "Yamal vacuum (north)",
+        "lat": 71.5,
+        "lon": 75.0,
+        "expected": "valid",
+        "value": 1883.4913582715303,
+        "is_nan": false,
+        "pass": true,
+        "note": "",
+        "why": "far from sources"
+      }
+    ],
+    "NO2": [
+      {
+        "gas": "NO2",
+        "name": "Tambeyskoye centroid",
+        "lat": 71.55,
+        "lon": 71.6,
+        "expected": "masked",
+        "value": null,
+        "is_nan": true,
+        "pass": true,
+        "note": "",
+        "why": "gas_field 50km"
+      },
+      {
+        "gas": "NO2",
+        "name": "Bovanenkovskoye (TD-0020)",
+        "lat": 70.4,
+        "lon": 68.4,
+        "expected": "masked",
+        "value": null,
+        "is_nan": true,
+        "pass": true,
+        "note": "",
+        "why": "gas_field 50km"
+      },
+      {
+        "gas": "NO2",
+        "name": "Tom-Usinsk GRES",
+        "lat": 53.78,
+        "lon": 87.59,
+        "expected": "masked",
+        "value": null,
+        "is_nan": true,
+        "pass": true,
+        "note": "",
+        "why": "tpp_gres 30km"
+      },
+      {
+        "gas": "NO2",
+        "name": "Tyumen city",
+        "lat": 57.15,
+        "lon": 65.55,
+        "expected": "masked",
+        "value": null,
+        "is_nan": true,
+        "pass": true,
+        "note": "",
+        "why": "urban + tpp"
+      },
+      {
+        "gas": "NO2",
+        "name": "Yamal vacuum (north)",
+        "lat": 71.5,
+        "lon": 75.0,
+        "expected": "valid",
+        "value": 5.465636093556125e-06,
+        "is_nan": false,
+        "pass": true,
+        "note": "",
+        "why": "far from sources"
+      }
+    ],
+    "SO2": [
+      {
+        "gas": "SO2",
+        "name": "Tambeyskoye centroid",
+        "lat": 71.55,
+        "lon": 71.6,
+        "expected": "masked",
+        "value": null,
+        "is_nan": true,
+        "pass": true,
+        "note": "",
+        "why": "gas_field 50km"
+      },
+      {
+        "gas": "SO2",
+        "name": "Bovanenkovskoye (TD-0020)",
+        "lat": 70.4,
+        "lon": 68.4,
+        "expected": "masked",
+        "value": null,
+        "is_nan": true,
+        "pass": true,
+        "note": "",
+        "why": "gas_field 50km"
+      },
+      {
+        "gas": "SO2",
+        "name": "Tom-Usinsk GRES",
+        "lat": 53.78,
+        "lon": 87.59,
+        "expected": "masked",
+        "value": null,
+        "is_nan": true,
+        "pass": true,
+        "note": "",
+        "why": "tpp_gres 30km"
+      },
+      {
+        "gas": "SO2",
+        "name": "Tyumen city",
+        "lat": 57.15,
+        "lon": 65.55,
+        "expected": "masked",
+        "value": null,
+        "is_nan": true,
+        "pass": true,
+        "note": "",
+        "why": "urban + tpp"
+      },
+      {
+        "gas": "SO2",
+        "name": "Yamal vacuum (north)",
+        "lat": 71.5,
+        "lon": 75.0,
+        "expected": "valid",
+        "value": 8.348258008149938e-05,
+        "is_nan": false,
+        "pass": true,
+        "note": "",
+        "why": "far from sources"
+      }
+    ]
+  },
+  "coverage_old_vs_new": {
+    "CH4": {
+      "old_M07_valid": 168602.44705882313,
+      "new_M07_valid": 166250.0941176467,
+      "reduction_pct": 1.3952068799782853
+    },
+    "NO2": {
+      "old_M07_valid": 198725.19999999972,
+      "new_M07_valid": 197192.8470588231,
+      "reduction_pct": 0.7710914072179187
+    },
+    "SO2": {
+      "old_M07_valid": 198725.19999999972,
+      "new_M07_valid": 197192.8470588231,
+      "reduction_pct": 0.7710914072179187
+    }
+  },
+  "temp_assets_deleted": 36
+}

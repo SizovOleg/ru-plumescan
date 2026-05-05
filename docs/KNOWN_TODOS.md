@@ -39,7 +39,7 @@ deferrals**, не для architectural changes.
 
 ---
 
-## TD-0027 — Industrial buffer per source type **[RESOLVED 2026-05-04 (P-01.0d) — pending rebuild verification]**
+## TD-0027 — Industrial buffer per source type **[RESOLVED 2026-05-05 (P-01.0d)]**
 
 **Resolution (P-01.0d):** Heterogeneous per-feature buffer applied via classification table (`src/py/rca/classify_source_types.py`):
 - `gas_field` 50 km (13 features, including 6 newly-added missing gas fields)
@@ -96,7 +96,35 @@ Final RESOLVED status pending Шаг 6 verification (Tambeyskoye + similar gas f
 
 ---
 
-## TD-0023 — Cities-vs-industrial scope inflation **[RESOLVED 2026-05-04 (P-01.0d) — pending rebuild verification]**
+## TD-0029 NEW — GEE implementation gotchas appendix **[LOW priority]**
+
+- **Origin:** P-01.0d implementation 2026-05-04/05 — encountered 4 distinct GEE
+  Python API gotchas worth documenting for future LLM-generated и human code.
+- **Status:** OPEN, low priority. Effort ~15 min — append к Algorithm.md §15.
+- **Lessons captured:**
+  1. **Lazy-evaluation hazard:** `fc.filter(...)` returns deferred reference;
+     deleting source asset before downstream Export → "Collection asset not
+     found". **Fix:** materialize `fc_new` from archive after Export sequence
+     guaranteed start, или use `Export.table.toAsset` immediately on filtered
+     deferred ref before mutating source.
+  2. **Reprojection reducer:** binary masks reprojected с default mean reducer
+     dilute signal at low-resolution boundaries (1km→7km halved Surgut urban
+     signal). **Fix:** use `reduceResolution(MAX)` для conservative
+     ANY-pixel-positive semantics.
+  3. **Sanity coordinate sensitivity:** when buffer changes (e.g., 30→50 km для
+     gas_field), previously-clean sanity points may fall within new buffer
+     (Yamal vacuum (71, 73) ↔ Kruzenshternskoye 40 km). **Fix:** either move
+     coord или document expected change.
+  4. **Number/Boolean coercion:** `ee.String.equals()` returns ComputedObject не
+     Number; `.And()` chaining fails. `ee.List.contains()` returns Boolean,
+     also fails `.And()`. **Fix:** use `.compareTo("X").eq(0)` returning Number,
+     или nested `ee.Algorithms.If(...)` chain instead of algebraic chains.
+- **Trigger:** when Algorithm.md §15 (GEE gotchas) revised next; либо когда
+  similar issue encountered.
+
+---
+
+## TD-0023 — Cities-vs-industrial scope inflation **[RESOLVED 2026-05-05 (P-01.0d)]**
 
 **Resolution (P-01.0d):** New `RuPlumeScan/urban/urban_mask_smod22` Asset created via JRC GHS-SMOD ≥22 threshold. Combined с industrial mask via AND-merge в `build_regional_climatology.py --use-urban-mask`. Sanity 4/4 PASS (Tyumen/Surgut/Novokuznetsk masked as urban, Yamal vacuum non-urban). Reprojection 1km→7km uses MAX reducer (conservative — any 1km urban → 7km cell urban). См. Algorithm §3.4.1.2 + OpenSpec MC-O.
 
@@ -437,7 +465,11 @@ Phase 2A mitigation parameters specified в `docs/p-01.2_phase_2a_handoff.md`: s
 
 ---
 
-## TD-0020 — Bovanenkovo test point coordinate error in cross-check labels
+## TD-0020 — Bovanenkovo test point coordinate error **[RESOLVED 2026-05-05 (P-01.0d)]**
+
+**Resolution:** Sanity test points в P-01.0d closeout use accurate Bovanenkovskoye centroid (68.4°E, 70.4°N). Verified masked 50 km buffer applied correctly across all 3 regional baselines (CH4/NO2/SO2). Coordinate convention now consistent across codebase.
+
+### Original TD-0020 issue (preserved):
 
 - **Origin:** P-01.0b validation report point 6 misnomer 2026-04-29
 - **Status:** documented, low priority

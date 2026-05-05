@@ -618,7 +618,12 @@ existing architectural decisions. Документируются здесь дл
 
 - **TD-0024/TD-0025 verification в production:** all 4 new fresh runs (CH4 + NO2 + SO2 + per-type/urban scripts) use canonical Provenance pattern from build script start. Run IDs distinct per gas (one Provenance instance flows STARTED → submission → SUCCEEDED → asset metadata).
 
-- Rebuild status: 36 batch tasks LAUNCHED 2026-05-04, expected wall-clock 24-30 h. Final regional baselines pending.
+- **Rebuild outcome (2026-05-05): A — FULL SUCCESS.** 36/36 monthly tasks SUCCEEDED across 3 gases. 3 combine tasks SUCCEEDED. 36 temp assets cleaned up. Sanity 15/15 PASS (5 points × 3 gases) включая Tambeyskoye/Bovanenkovskoye/Tom-Usinsk/Tyumen masked, Yamal vacuum north (71.5°N, 75°E) valid. Audit 9/9 OK (3 new regional + 3 v1_pre_urban_mask archives + 2 Δ + reference; allowlist=0). Coverage reduction: CH4 -1.4%, NO2/SO2 -0.8% (gas-field expansion + urban mask).
+- **Final assets LIVE:** all 3 regional baselines с canonical Provenance triple natively (TD-0024/TD-0025 prevention pattern verified в production end-to-end):
+  - `RuPlumeScan/baselines/regional_CH4_2019_2025` run_id `default_2019_2025_c59117e7`
+  - `RuPlumeScan/baselines/regional_NO2_2019_2025` run_id `default_2019_2025_aadf698c`
+  - `RuPlumeScan/baselines/regional_SO2_2019_2025` run_id `default_2019_2025_316cf9ca`
+- TD-0020 (Bovanenkovo coord) RESOLVED — accurate centroid used в sanity, masked correctly. TD-0023 + TD-0027 closed.
 
 ### MC-2026-05-04-N — Phase 1c dual baseline cross-check validation (P-01.2)
 
