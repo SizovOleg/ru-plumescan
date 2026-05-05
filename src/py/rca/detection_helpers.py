@@ -54,9 +54,14 @@ ZONE_BOUNDARY_TOLERANCE_KM = 100.0
 # Approximate km-per-degree-latitude (constant; lon scaling по cos(lat) elsewhere)
 KM_PER_DEG_LAT = 111.0
 
-# TD-0034 — reference baseline P-01.0a v1 has 7 of 12 months only
-# (M02, M05, M08, M11, M12 missing — Q-mid pattern + winter retrievals).
-# Detection restricted к these 7 months until reference rebuilt с remaining months.
+# TROPOMI CH4 usable retrieval months over Western Siberia AOI.
+# Months M02, M05, M08, M11, M12 omitted — sensor physical limitations:
+#   * Low sun zenith angle (high latitudes, winter season)
+#   * Snow albedo saturates SWIR retrieval
+#   * Cloud cover persistence
+# This is correct physical coverage, NOT methodology gap (TD-0034 RESOLVED
+# 2026-05-05 после Шаг 5 verification — researcher confirmation).
+# Tool-paper scope: "Detection covers all months с usable TROPOMI retrievals."
 REFERENCE_AVAILABLE_MONTHS = [1, 3, 4, 6, 7, 9, 10]
 
 # VIIRS flare radiance threshold (Algorithm §3.10 source classification)

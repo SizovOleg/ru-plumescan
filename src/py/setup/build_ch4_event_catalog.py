@@ -49,6 +49,7 @@ if str(_REPO_ROOT / "src" / "py") not in sys.path:
 
 from rca import detection_ch4  # noqa: E402  — sys.path injected above
 from rca.classify_events import apply_classification  # noqa: E402
+from rca.detection_ch4 import compute_plume_axis_client_side  # noqa: E402
 from rca.detection_helpers import (  # noqa: E402
     REFERENCE_AVAILABLE_MONTHS,
     annotate_transboundary_qa,
@@ -105,6 +106,67 @@ def setup_logger() -> logging.Logger:
 
 
 # ---------------------------------------------------------------------------
+# Plume axis computation (Algorithm §3.8 — client-side eigendecomposition)
+# ---------------------------------------------------------------------------
+
+
+def compute_orbit_plume_axes(
+    cluster_fc: ee.FeatureCollection,
+    scale_m: int = ANALYSIS_SCALE_M,
+) -> ee.FeatureCollection:
+    """
+    Compute plume_axis_deg per cluster via client-side numpy.linalg.eigh PCA.
+
+    Server-side `ee.Array.eigen` exists but fragile (researcher decision Шаг 4):
+    sample pixel coords through reduceRegions, do eigendecomposition в numpy с
+    cos(lat) aspect correction.
+
+    Implementation:
+      1. Sample ee.Image.pixelLonLat() inside each cluster polygon (server-side
+         reduceRegions с Reducer.toList()) → produces 'longitude' и 'latitude'
+         list properties per cluster (aligned indices)
+      2. getInfo() materializes data client-side
+      3. Per cluster: compute_plume_axis_client_side(lons, lats) → axis bearing
+      4. Build new FC с plume_axis_deg property; pixel coord lists removed
+         (would otherwise bloat exported asset)
+
+    Args:
+        cluster_fc: FC с cluster polygon geometries (output of
+            compute_cluster_attributes after build_zmin_filter)
+        scale_m: pixel sampling scale (matches detection grid)
+
+    Returns: FC с plume_axis_deg property added (None for <3 px clusters).
+    """
+    # Sample pixel lon/lat per cluster polygon (server-side)
+    pixel_lonlat = ee.Image.pixelLonLat()
+    sampled = pixel_lonlat.reduceRegions(
+        collection=cluster_fc,
+        reducer=ee.Reducer.toList(),
+        scale=scale_m,
+    )
+
+    # Materialize client-side — single getInfo() per orbit
+    info = sampled.getInfo()
+    if not info or "features" not in info:
+        return cluster_fc  # nothing к augment
+
+    # Compute axes per cluster + build new feature list
+    augmented_features = []
+    for feat in info["features"]:
+        props = dict(feat["properties"])
+        lons = props.pop("longitude", None) or []
+        lats = props.pop("latitude", None) or []
+        axis = compute_plume_axis_client_side(lons, lats) if lons else None
+        # plume_axis_deg may be None (returned by helper for <3 px); store as null
+        props["plume_axis_deg"] = axis if axis is not None else None
+        # Reconstruct geometry server-side
+        geom = ee.Geometry(feat["geometry"]) if feat.get("geometry") else None
+        augmented_features.append(ee.Feature(geom, props))
+
+    return ee.FeatureCollection(augmented_features)
+
+
+# ---------------------------------------------------------------------------
 # Per-orbit detection pipeline
 # ---------------------------------------------------------------------------
 
@@ -121,6 +183,7 @@ def detect_orbit_clusters(
     relative_min_ppb: float = 15.0,
     annulus_outer_km: float = 150,
     min_cluster_px: int = 5,
+    scale_m: int = ANALYSIS_SCALE_M,
     wind_level_hpa: int = 850,
     alignment_threshold_deg: float = 30.0,
     min_wind_speed_ms: float = 2.0,
@@ -188,11 +251,15 @@ def detect_orbit_clusters(
     # Per-region z_min filter (TD-0018, DNA §2.1.6)
     filtered = annotated.filter(build_zmin_filter())
 
-    # Wind validation (Algorithm §3.9 TD-0031). plume_axis_deg НЕ set yet —
-    # client-side eigendecomposition в Шаг 5+ post-export. validate_wind
-    # handles missing axis via wind_state='axis_unknown' (Issue 5.2 fix).
+    # Plume axis computation (Algorithm §3.8) — client-side eigendecomposition
+    # с cos(lat) aspect correction. Sets plume_axis_deg on each cluster так что
+    # validate_wind может properly resolve wind_state cascade (aligned/misaligned
+    # vs axis_unknown). Шаг 5 launch fix: previously missing → 100% axis_unknown.
+    filtered_with_axis = compute_orbit_plume_axes(filtered, scale_m=scale_m)
+
+    # Wind validation (Algorithm §3.9 TD-0031) — now с populated plume_axis_deg
     with_wind = detection_ch4.validate_wind(
-        filtered,
+        filtered_with_axis,
         era5_collection,
         orbit_millis,
         wind_level_hpa=wind_level_hpa,
@@ -246,22 +313,35 @@ def process_month(
         .filterBounds(aoi)
     )
 
-    def _per_orbit(orbit_image: ee.Image) -> ee.FeatureCollection:
-        return detect_orbit_clusters(
-            ee.Image(orbit_image),
-            hybrid_background,
-            month=month,
-            aoi=aoi,
-            era5_collection=era5_collection,
-            source_points_fc=source_points_fc,
-        )
-
-    # Map collection → list of FCs → flatten via FC constructor
+    # Шаг 5 axis-fix: detect_orbit_clusters now contains client-side getInfo()
+    # для plume axis eigendecomposition, so cannot use server-side .map() over
+    # orbits (would try to serialize Python code to EE side). Client-side
+    # Python loop instead.
     orbit_list = collection.toList(collection.size())
-    fcs = orbit_list.map(_per_orbit)
-    merged = ee.FeatureCollection(fcs).flatten()
+    n_orbits = collection.size().getInfo()
 
-    logger.info("  M%02d %s..%s — processed", month, month_start, month_end)
+    orbit_fcs: list[ee.FeatureCollection] = []
+    for i in range(n_orbits):
+        orbit_image = ee.Image(orbit_list.get(i))
+        try:
+            orbit_fc = detect_orbit_clusters(
+                orbit_image,
+                hybrid_background,
+                month=month,
+                aoi=aoi,
+                era5_collection=era5_collection,
+                source_points_fc=source_points_fc,
+            )
+            orbit_fcs.append(orbit_fc)
+        except Exception as exc:  # pragma: no cover — runtime-only path
+            logger.warning("  M%02d orbit %d: skipped — %s", month, i, exc)
+
+    if not orbit_fcs:
+        logger.info("  M%02d %s..%s — 0 orbits processed", month, month_start, month_end)
+        return ee.FeatureCollection([])
+
+    merged = ee.FeatureCollection(orbit_fcs).flatten()
+    logger.info("  M%02d %s..%s — %d orbits processed", month, month_start, month_end, n_orbits)
     return merged
 
 

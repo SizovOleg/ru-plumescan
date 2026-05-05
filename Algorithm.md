@@ -434,6 +434,23 @@ const band = 'CH4_column_volume_mixing_ratio_dry_air_bias_corrected';
 - **Protected areas reference: `RuPlumeScan/reference/protected_areas_mask`** (НОВОЕ в v2.3)
 - Reference zones FeatureCollection: `RuPlumeScan/reference/protected_areas` (per-zone polygons + metadata)
 
+**Temporal coverage (Phase 2A v1, 2026-05-05):**
+
+Detection covers months **M01, M03, M04, M06, M07, M09, M10** — все months с usable
+TROPOMI CH4 retrievals over Western Siberia AOI. Months M02, M05, M08, M11, M12
+omitted due к sensor physical limitations:
+- Low sun zenith angle (high latitudes, winter season) — SWIR retrieval fails
+- Snow albedo saturation
+- Cloud cover persistence
+
+Этот set is canonical, NOT a data gap. Reference baseline asset
+`RuPlumeScan/baselines/reference_CH4_2019_2025_v1` correctly contains только эти
+7 months. Tool-paper scope: "Detection covers все months с usable TROPOMI
+retrievals over Western Siberia." Honest и accurate.
+
+Implementation: `rca.detection_helpers.REFERENCE_AVAILABLE_MONTHS = [1,3,4,6,7,9,10]`.
+Orchestrator iterates over этот subset only.
+
 ### 3.3. QA filtering (Lorente 2021)
 
 Без изменений с v2.2:

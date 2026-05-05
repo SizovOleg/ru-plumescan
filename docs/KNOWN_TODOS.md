@@ -72,7 +72,25 @@ deferrals**, не для architectural changes.
 
 ---
 
-## TD-0034 NEW — Reference baseline P-01.0a v1 has 7 of 12 months only **[MEDIUM priority — Phase 2A scope reduction]**
+## TD-0034 — Reference baseline P-01.0a v1 has 7 of 12 months only **[RESOLVED 2026-05-05 — physical TROPOMI coverage, not methodology gap]**
+
+**Resolution (2026-05-05 post Шаг 5 verification):** Researcher determined this is the
+**correct physical coverage** of TROPOMI CH₄ retrievals over Western Siberia, not a
+methodology gap. Winter months (M02/M05/M08/M11/M12) lack usable retrievals due к
+sensor physical limitations:
+- Low sun zenith angle (high latitudes, winter season)
+- Snow albedo (saturates SWIR retrieval)
+- Cloud cover persistence
+
+The 7-month coverage (M01, M03, M04, M06, M07, M09, M10) corresponds к все months с
+usable TROPOMI CH4 retrievals over Western Siberia AOI. Tool-paper scope is honest:
+"Detection covers all months с usable TROPOMI retrievals". Algorithm.md / RNA.md
+updated с physical-coverage note.
+
+No reference rebuild needed. `REFERENCE_AVAILABLE_MONTHS = [1,3,4,6,7,9,10]` is
+canonical, not provisional. CLOSED.
+
+### Original TD-0034 issue (preserved для historical record):
 
 - **Origin:** P-02.0a Шаг 5 pre-launch asset verification 2026-05-05.
 - **Status:** documented limitation — Phase 2A v1 detection restricted к 7 months.

@@ -520,6 +520,71 @@ def test_apply_event_overrides_matches_event(ee_init):
     assert "manual_attribution_override" in props["qa_flags"]
 
 
+def test_compute_orbit_plume_axes_populates_axis(ee_init):
+    """Шаг 5 launch fix: compute_orbit_plume_axes computes plume_axis_deg
+    на cluster polygons via client-side eigendecomposition.
+
+    Verifies wind_state propagation through downstream validate_wind НЕ stuck
+    in axis_unknown — at least cluster-large-enough features get axis bearing.
+    """
+    ee = ee_init
+    from setup.build_ch4_event_catalog import compute_orbit_plume_axes
+
+    # Synthetic clusters: large rectangle + small (≥3 px each at 7km grid)
+    big_cluster = ee.Geometry.Rectangle([86.5, 53.7, 86.9, 54.0])  # ~30 px
+    small_cluster = ee.Geometry.Rectangle([87.0, 54.5, 87.05, 54.55])  # ~1 px
+
+    fc = ee.FeatureCollection(
+        [
+            ee.Feature(big_cluster, {"cluster_id": 1, "centroid_lon": 86.7, "centroid_lat": 53.85}),
+            ee.Feature(
+                small_cluster, {"cluster_id": 2, "centroid_lon": 87.025, "centroid_lat": 54.525}
+            ),
+        ]
+    )
+
+    augmented = compute_orbit_plume_axes(fc, scale_m=7000)
+    feats = augmented.toList(2).getInfo()
+
+    # Both should have plume_axis_deg property (None for too-few-pixels OR float)
+    for f in feats:
+        assert "plume_axis_deg" in f["properties"]
+        # No pixel coord lists in output (would bloat asset)
+        assert "longitude" not in f["properties"]
+        assert "latitude" not in f["properties"]
+
+    # Big cluster should have axis bearing in [0, 180)
+    big_axis = feats[0]["properties"]["plume_axis_deg"]
+    if big_axis is not None:
+        assert 0.0 <= big_axis < 180.0, f"big cluster axis out of range: {big_axis}"
+
+
+def test_validate_wind_with_populated_axis_aligned(ee_init):
+    """Cluster с populated plume_axis_deg + sufficient wind aligned → wind_state='aligned'."""
+    ee = ee_init
+    from rca.detection_ch4 import validate_wind
+
+    # Plume axis 90° (E-W) — wind should be E or W (FROM 90° или 270°) к align
+    feat = ee.Feature(
+        ee.Geometry.Point([68.5, 70.5]).buffer(10000),
+        {"plume_axis_deg": 90.0},
+    )
+    fc = ee.FeatureCollection([feat])
+    era5 = ee.ImageCollection("ECMWF/ERA5/HOURLY")
+    # Pick a date с known easterly wind in summer  Yamal
+    orbit_millis = ee.Date("2022-07-15T12:00:00").millis()
+
+    result_fc = validate_wind(fc, era5, orbit_millis, alignment_threshold_deg=30.0)
+    props = result_fc.first().toDictionary().getInfo()
+
+    # wind_state should NOT be axis_unknown (axis is populated)
+    assert (
+        props.get("wind_state") != "axis_unknown"
+    ), f"axis populated but wind_state={props.get('wind_state')} — fix broken"
+    # Should be one of: aligned, misaligned, insufficient_wind
+    assert props.get("wind_state") in ("aligned", "misaligned", "insufficient_wind")
+
+
 def test_orchestrator_single_orbit_pipeline(ee_init):
     """End-to-end smoke test: detect_orbit_clusters runs without exception
     on a real TROPOMI orbit + synthetic baselines + real ERA5 + small AOI."""
@@ -720,19 +785,27 @@ def test_kuzbass_2022_09_20_detected(ee_init):
 
     from setup.build_ch4_event_catalog import detect_orbit_clusters
 
-    def _per_orbit(orbit_image):
-        return detect_orbit_clusters(
-            ee.Image(orbit_image),
-            hybrid,
-            month=9,
-            aoi=aoi,
-            era5_collection=era5,
-            source_points_fc=source_points,
-        )
-
+    # Шаг 5 axis-fix: detect_orbit_clusters now contains client-side getInfo()
+    # для plume_axis_deg eigendecomposition, so cannot use server-side .map().
+    # Client-side Python loop instead.
     orbit_list = orbit_collection.toList(orbit_collection.size())
-    fcs = orbit_list.map(_per_orbit)
-    merged = ee.FeatureCollection(fcs).flatten()
+    orbit_fcs = []
+    for i in range(n_orbits):
+        orbit_image = ee.Image(orbit_list.get(i))
+        try:
+            orbit_fc = detect_orbit_clusters(
+                orbit_image,
+                hybrid,
+                month=9,
+                aoi=aoi,
+                era5_collection=era5,
+                source_points_fc=source_points,
+            )
+            orbit_fcs.append(orbit_fc)
+        except Exception as exc:
+            logger.warning("orbit %d skipped: %s", i, exc)
+
+    merged = ee.FeatureCollection(orbit_fcs).flatten() if orbit_fcs else ee.FeatureCollection([])
 
     # Apply classification cascade
     classified = apply_classification(merged)

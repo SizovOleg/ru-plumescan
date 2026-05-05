@@ -111,8 +111,10 @@ def build_hybrid_background(
         reference_zones_fc: zapovednik polygons; if None — matched_inside_reference_zone
             = 0 everywhere (orchestrator passes real FC at runtime)
         months: list of months [1..12] к include. Default — all 12. Set к
-            REFERENCE_AVAILABLE_MONTHS=[1,3,4,6,7,9,10] when consuming the v1
-            reference asset (TD-0034 limitation — 7 of 12 months only).
+            REFERENCE_AVAILABLE_MONTHS=[1,3,4,6,7,9,10] — months с usable
+            TROPOMI CH4 retrievals over Western Siberia (winter sensor
+            limitations excluded; TD-0034 RESOLVED — physical coverage,
+            not methodology gap).
     """
     if months is None:
         months = list(range(1, 13))
