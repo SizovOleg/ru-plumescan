@@ -1,0 +1,90 @@
+{
+  "tasks": [
+    {
+      "month": 1,
+      "task_id": "2JQYRMZHSUVEO3DYGKHSW6JF",
+      "asset_path": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/_temp/regional_NO2_2019_2025_M01",
+      "state": "SUCCEEDED",
+      "started_at": 1777882601.93231
+    },
+    {
+      "month": 2,
+      "task_id": "TDXO7WIQ3KZCEO4PIS64DLTD",
+      "asset_path": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/_temp/regional_NO2_2019_2025_M02",
+      "state": "SUCCEEDED",
+      "started_at": 1777882607.6522472
+    },
+    {
+      "month": 3,
+      "task_id": "O6ZO53ICQSIDUGFDWNBYZXOG",
+      "asset_path": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/_temp/regional_NO2_2019_2025_M03",
+      "state": "SUCCEEDED",
+      "started_at": 1777882613.4495547
+    },
+    {
+      "month": 4,
+      "task_id": "GZ2LXD6FWJSOIX3G7CXE4KXO",
+      "asset_path": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/_temp/regional_NO2_2019_2025_M04",
+      "state": "SUCCEEDED",
+      "started_at": 1777882619.933232
+    },
+    {
+      "month": 5,
+      "task_id": "B7BPCJAPZHLGWKLMDUEQZDQT",
+      "asset_path": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/_temp/regional_NO2_2019_2025_M05",
+      "state": "SUCCEEDED",
+      "started_at": 1777882627.0823636
+    },
+    {
+      "month": 6,
+      "task_id": "ELRXLP7BEF5BEKOP6FPNOVOS",
+      "asset_path": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/_temp/regional_NO2_2019_2025_M06",
+      "state": "SUCCEEDED",
+      "started_at": 1777882633.0018141
+    },
+    {
+      "month": 7,
+      "task_id": "H523GDI4IF6EBJIZR6L6U6P6",
+      "asset_path": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/_temp/regional_NO2_2019_2025_M07",
+      "state": "SUCCEEDED",
+      "started_at": 1777882639.5034623
+    },
+    {
+      "month": 8,
+      "task_id": "UIILMCMUEMJCU2SDKYNS7VE6",
+      "asset_path": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/_temp/regional_NO2_2019_2025_M08",
+      "state": "SUCCEEDED",
+      "started_at": 1777882645.4620562
+    },
+    {
+      "month": 9,
+      "task_id": "DSDYPJJR3YKYF7SZOOC66RPC",
+      "asset_path": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/_temp/regional_NO2_2019_2025_M09",
+      "state": "SUCCEEDED",
+      "started_at": 1777882652.0450146
+    },
+    {
+      "month": 10,
+      "task_id": "IOW2YGNIOYUOVILRM5WSPT7T",
+      "asset_path": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/_temp/regional_NO2_2019_2025_M10",
+      "state": "SUCCEEDED",
+      "started_at": 1777882658.4759517
+    },
+    {
+      "month": 11,
+      "task_id": "NOBN5MZYOQDDQAQP63AEEIKI",
+      "asset_path": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/_temp/regional_NO2_2019_2025_M11",
+      "state": "SUCCEEDED",
+      "started_at": 1777882665.5466566
+    },
+    {
+      "month": 12,
+      "task_id": "UVLCJNCQXNVDCY4X5YXPN4X6",
+      "asset_path": "projects/nodal-thunder-481307-u1/assets/RuPlumeScan/baselines/_temp/regional_NO2_2019_2025_M12",
+      "state": "SUCCEEDED",
+      "started_at": 1777882671.5530443
+    }
+  ],
+  "gas": "NO2",
+  "year": 2025
+}

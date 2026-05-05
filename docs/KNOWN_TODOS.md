@@ -11,6 +11,134 @@ deferrals**, не для architectural changes.
 
 ---
 
+## TD-0032 NEW — Consistency-driven primary switch (Algorithm §3.5) **[LOW priority — Phase 2A v1.1 backlog]**
+
+- **Origin:** P-02.0a Шаг 4 GPT review #2 (2026-05-05) — accepted simplification.
+- **Status:** documented gap — explicitly tracked для honest scope.
+- **Issue:** `build_hybrid_background()` currently implements `mode='reference_only'`
+  per Algorithm §3.5 — primary baseline always uses reference where defined,
+  regardless of `consistency_flag` value. The full consistency-driven primary
+  switch (Algorithm §3.5 lines 818-826):
+  ```javascript
+  const use_reference_primary = config.background.mode === 'reference_only' ||
+                                  consistency.eq(1).and(config.background.primary === 'reference');
+  ```
+  is deferred. `consistency_flag` is metadata only в v1; the metadata is
+  available к downstream classification cascade (Шаг 6 wetland heuristic), но
+  primary selection itself does not consult it.
+- **Implications:** When consistency_flag=false (baselines diverge by >30 ppb),
+  pixel uses reference value anyway. Researcher decision Шаг 4 GPT review:
+  reference is methodology anchor (clean-zone baseline), regional fallback only
+  for masked pixels. This is more conservative than `mode='hybrid'` would be.
+- **Trigger для активации:** if Phase 2A validation reveals systematic divergence
+  between baselines в areas where regional is more accurate (e.g., wide gas
+  fields where reference baseline biased), revisit к add full mode='hybrid'
+  path.
+- **Effort:** ~30 LoC orchestrator-side mode parameter + Algorithm.md §3.5 update
+  + 4-6 new tests (consistent → ref, divergent + mode=hybrid → reg, divergent
+  + mode=reference_only → ref). ~3-4 hours.
+- **Dependency:** Phase 2A v1.0 closure + sensitivity test results.
+- **Reference:** Algorithm.md §3.5 lines 901-906 inline note.
+
+---
+
+## TD-0035 NEW — apply_event_overrides graph depth scaling **[LOW priority — track first catalog launch]**
+
+- **Origin:** P-02.0a Шаг 5+6+7 GPT review #3 finding 2026-05-05.
+- **Status:** acceptable Phase 2A v1; track if catalog grows beyond manual review threshold.
+- **Issue:** `rca/detection_helpers.py::apply_event_overrides` iterates client-side
+  over override entries and applies `events_fc.map(...)` per entry. For typical
+  Phase 2A v1 scope (<20 manual overrides total), graph depth stays well within
+  EE serialization limits (~256 nodes per task). At >50 overrides, graph
+  serialization risk increases.
+- **Detection:** monitor catalog growth. Trigger refactor если:
+  - Override count >50 в `config/event_overrides.json`
+  - "User memory limit exceeded" or "FeatureCollection.map: Computation timed
+    out" errors appear на launch
+- **Fix path (если triggered):** refactor к single `.map()` call с composite
+  filter built from override list:
+  ```python
+  composite_filter = ee.Filter.Or(*[
+      ee.Filter.And(
+          ee.Filter.lt("centroid_lat_diff", tol_lat),
+          ee.Filter.lt("centroid_lon_diff", tol_lon),
+          ee.Filter.dateRangeContains("orbit_date_millis", date_min, date_max),
+      ) for entry in overrides
+  ])
+  ```
+  And for each-feature: derive matched override server-side via .filter() chain.
+- **Effort:** 2-3 hours (refactor + tests + verification на real catalog).
+- **Trigger:** override count >50 OR launch failure.
+
+---
+
+## TD-0034 — Reference baseline P-01.0a v1 has 7 of 12 months only **[RESOLVED 2026-05-05 — physical TROPOMI coverage, not methodology gap]**
+
+**Resolution (2026-05-05 post Шаг 5 verification):** Researcher determined this is the
+**correct physical coverage** of TROPOMI CH₄ retrievals over Western Siberia, not a
+methodology gap. Winter months (M02/M05/M08/M11/M12) lack usable retrievals due к
+sensor physical limitations:
+- Low sun zenith angle (high latitudes, winter season)
+- Snow albedo (saturates SWIR retrieval)
+- Cloud cover persistence
+
+The 7-month coverage (M01, M03, M04, M06, M07, M09, M10) corresponds к все months с
+usable TROPOMI CH4 retrievals over Western Siberia AOI. Tool-paper scope is honest:
+"Detection covers all months с usable TROPOMI retrievals". Algorithm.md / RNA.md
+updated с physical-coverage note.
+
+No reference rebuild needed. `REFERENCE_AVAILABLE_MONTHS = [1,3,4,6,7,9,10]` is
+canonical, not provisional. CLOSED.
+
+### Original TD-0034 issue (preserved для historical record):
+
+- **Origin:** P-02.0a Шаг 5 pre-launch asset verification 2026-05-05.
+- **Status:** documented limitation — Phase 2A v1 detection restricted к 7 months.
+- **Issue:** `RuPlumeScan/baselines/reference_CH4_2019_2025_v1` (P-01.0a) only
+  contains bands `ref_M{NN}, sigma_M{NN}, lat_dist_M{NN}` для months
+  M01, M03, M04, M06, M07, M09, M10. Months M02, M05, M08, M11, M12 absent —
+  Q-mid pattern (TD-0008 user memory limit) + winter retrievals (snow/cloud).
+- **Impact:** Phase 2A CH4 detection cannot run for missing months because:
+  - `compute_z_score` selects `ref_M{NN}` band per orbit; missing band → error
+  - Build_hybrid_background requires ref bands per month
+  - Affected: ~5 of 12 months (~42%) of detection coverage lost
+  - Most significantly missing: **M08 (August)** — peak summer methane emissions
+    season; **M11/M12** — late autumn anomalies before snow cover stable
+- **Phase 2A v1 mitigation:** orchestrator iterates ONLY available months
+  (REFERENCE_AVAILABLE_MONTHS = [1,3,4,6,7,9,10] в `detection_helpers.py`).
+  Detection в other months simply not produced; no false-negative claims made.
+  Annual catalog has explicit `available_months` property documenting the gap.
+- **Resolution path:**
+  1. Investigate Q-mid pattern в P-01.0a build (TD-0008 sister issue — may need
+     12 separate batch tasks per Option C pattern)
+  2. Build extension asset `reference_CH4_2019_2025_v2` с все 12 months
+  3. Migrate orchestrator к v2 reference, drop available_months parameter
+- **Trigger:** when Phase 2A v1 catalog complete + summer/winter coverage gaps
+  documented в validation report. OR if reviewer flags missing-months gap.
+- **Effort:** 2-3 days (P-01.0a-style monthly batch rebuild + asset migration).
+- **Related:** TD-0008 (Q-mid memory limit, regional fix), TD-0010 (Kuznetsky
+  Alatau low retrieval count — may compound Q-mid issue для southern band).
+
+---
+
+## TD-0033 NEW — Шаг 7 Kuzbass regression integration test should exercise wind_state='insufficient_wind' branch **[LOW priority]**
+
+- **Origin:** P-02.0a Шаг 4 GPT review #2 (2026-05-05) — non-blocking observation.
+- **Status:** TBD when Шаг 7 implemented.
+- **Issue:** Current `test_detection_ch4_integration.py` covers `wind_state='axis_unknown'`
+  branch (cluster без `plume_axis_deg`). Other 3 wind_state branches (`aligned`,
+  `misaligned`, `insufficient_wind`) NOT exercised by integration suite — only
+  by unit-level math tests against the reference formula.
+- **Trigger:** Phase 2A Шаг 7 implementation (Kuzbass 2022-09-20 regression test).
+- **What's deferred:** Add synthetic low-wind case (e.g., u=0.5, v=0.5 m/s,
+  wind_speed = 0.71 m/s < 2.0 threshold) to integration suite. Verify
+  `wind_state='insufficient_wind'` and `wind_consistent=null`. Likely 1-2
+  additional integration tests + 1 setup helper.
+- **Effort:** ~30 minutes during Шаг 7 implementation.
+- **Reference:** GPT review #2 final recommendation (non-blocking).
+
+---
+
 ## TD-0025 NEW — Integrate compute_provenance directly в build scripts **[HIGH PRIORITY]**
 
 - **Origin:** P-01.0c closure observation 2026-05-04 (researcher review of TD-0024 backfill outcomes).

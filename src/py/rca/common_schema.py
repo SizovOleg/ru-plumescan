@@ -114,6 +114,57 @@ SOURCE_TYPES: tuple[str, ...] = (
 
 
 # --------------------------------------------------------------------------- #
+# qa_flags vocabulary (v1.1, P-02.0a Шаг 3)                                   #
+#                                                                             #
+# Per RFC v2 Decision 6 + TD-0030: qa_flags is a comma-separated string       #
+# of tokens из enumerated VALID_QA_FLAGS set. Encoding rather than explicit   #
+# schema fields keeps schema v1.1 stable; формализация в schema v1.2 после    #
+# year usage observation (TD-0030).                                            #
+# --------------------------------------------------------------------------- #
+
+VALID_QA_FLAGS: frozenset[str] = frozenset(
+    {
+        # Repeatability (RFC v2 Decision 6)
+        "repeatable_event",  # ≥2 detections within 30d (60d winter)
+        "single_detection_candidate",  # 1 detection only, не winter
+        "single_detection_winter_bias",  # 1 detection в winter (sparse sampling)
+        "winter_sparse_sampling",  # coverage_fraction < 0.3 в repeatability window
+        # Transboundary (TD-0017 Phase 2A light)
+        "transboundary_easterly_transport_suspected",  # 24h ERA5 trajectory shows easterly
+        # Zone-boundary (TD-0021)
+        "near_zone_boundary",  # centroid within 100 km of 57.5°N or 62°N
+        "consistency_tolerance_inflated",  # tolerance increased due к boundary
+        # Wind (RFC v2 Decision 4)
+        "wind_speed_below_threshold",  # < 2 m/s — alignment skipped, wind_consistent=null
+        # Manual override (Algorithm §6)
+        "manual_attribution_override",  # event_overrides.json applied
+        # Validation
+        "synthetic_injection_test",  # synthetic event для validation
+        "regression_test_event",  # known event для regression
+    }
+)
+
+
+def validate_qa_flags(flags_str: str | None) -> bool:
+    """
+    Validate qa_flags string — comma-separated tokens из VALID_QA_FLAGS.
+
+    Empty / None → valid (no flags).
+    All tokens must be в VALID_QA_FLAGS set.
+    Whitespace around tokens stripped.
+
+    Args:
+        flags_str: e.g. "repeatable_event,near_zone_boundary" или None.
+
+    Returns: True if all tokens valid OR empty/None; False otherwise.
+    """
+    if not flags_str:  # None or empty string
+        return True
+    tokens = [t.strip() for t in flags_str.split(",") if t.strip()]
+    return all(token in VALID_QA_FLAGS for token in tokens)
+
+
+# --------------------------------------------------------------------------- #
 # Модель PlumeEvent                                                           #
 # --------------------------------------------------------------------------- #
 
@@ -249,7 +300,11 @@ class PlumeEvent(BaseModel):
         None, ge=0.0, le=1.0, description="Numerical confidence перед discretization."
     )
     qa_flags: str | None = Field(
-        None, description="Comma-separated flags (e.g. 'low_wind,diffuse,snow_edge')."
+        None,
+        description=(
+            "Comma-separated flags from VALID_QA_FLAGS vocabulary (e.g. "
+            "'repeatable_event,near_zone_boundary'). См. validate_qa_flags()."
+        ),
     )
 
     # ---- Dual baseline anomaly fields (NEW в v1.1, Algorithm v2.3 §2.1) --
@@ -376,6 +431,19 @@ class PlumeEvent(BaseModel):
     def _validate_source_type(cls, value: str | None) -> str | None:
         if value is not None and value not in SOURCE_TYPES:
             raise ValueError(f"nearest_source_type must be one of {SOURCE_TYPES}, got {value!r}")
+        return value
+
+    @field_validator("qa_flags")
+    @classmethod
+    def _validate_qa_flags_tokens(cls, value: str | None) -> str | None:
+        """All tokens должны быть в VALID_QA_FLAGS vocabulary (P-02.0a Шаг 3)."""
+        if not validate_qa_flags(value):
+            tokens = [t.strip() for t in (value or "").split(",") if t.strip()]
+            invalid = [t for t in tokens if t not in VALID_QA_FLAGS]
+            raise ValueError(
+                f"qa_flags contains invalid tokens {invalid}; "
+                f"valid tokens are {sorted(VALID_QA_FLAGS)}"
+            )
         return value
 
     @model_validator(mode="after")

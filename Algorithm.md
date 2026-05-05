@@ -1,10 +1,30 @@
-# RU-PlumeScan — Algorithm v2.3
+# RU-PlumeScan — Algorithm v2.3.2
 
-**Версия:** 2.3  
-**Дата:** 2026-04-26  
+**Версия:** 2.3.2
+**Дата:** 2026-05-05 (v2.3.2 patch — RFC v2 classification cascade detail)
 **Статус:** Формальная техническая спецификация Configurable Detection Surface  
 **Соответствие DNA:** v2.2  
-**Замена:** Algorithm.md v2.2 (archived)
+**Замена:** Algorithm.md v2.3.1 (RFC v2 incremental patch)
+
+**Изменения v2.3.1 → v2.3.2 (2026-05-05, RFC v2 consensus):**
+
+- §3.12 class assignment **detailed cascade specification** (was placeholder «Без изменений с v2.2»):
+  - **Priority 1**: `matched_inside_reference_zone=true` → `diffuse_CH4` (federal-protected zones — industrial activity prohibited by law)
+  - **Priority 2**: wetland heuristic (3 of 4 conditions) → `diffuse_CH4`
+  - **Priority 3**: `wind_consistent=false` → `wind_ambiguous`
+  - **Priority 4**: `nearest_source_id != null` → `CH4_only` (industrial)
+  - **Default**: `wind_ambiguous`
+- `compactness_ratio` threshold (THRESHOLD_TBD) determined empirically post-first-run; documented в future v2.3.3 patch.
+
+**Изменения v2.3 → v2.3.1 (2026-05-05, TD-0031):**
+
+- §3.9 wind attribution **detailed specification** (was placeholder):
+  - Wind source: `ECMWF/ERA5/HOURLY` (NOT `ERA5_LAND/HOURLY`)
+  - **Primary wind level: 850hPa** (~1500m, top of typical PBL)
+  - 10m / 100m / 500hPa recorded в metadata для sensitivity analysis
+  - Alignment threshold ±30°; min wind speed 2 m/s; vector averaging
+
+Closes TD-0031 (v2.3.1).
 
 **Изменения v2.2 → v2.3:**
 
@@ -414,6 +434,23 @@ const band = 'CH4_column_volume_mixing_ratio_dry_air_bias_corrected';
 - **Protected areas reference: `RuPlumeScan/reference/protected_areas_mask`** (НОВОЕ в v2.3)
 - Reference zones FeatureCollection: `RuPlumeScan/reference/protected_areas` (per-zone polygons + metadata)
 
+**Temporal coverage (Phase 2A v1, 2026-05-05):**
+
+Detection covers months **M01, M03, M04, M06, M07, M09, M10** — все months с usable
+TROPOMI CH4 retrievals over Western Siberia AOI. Months M02, M05, M08, M11, M12
+omitted due к sensor physical limitations:
+- Low sun zenith angle (high latitudes, winter season) — SWIR retrieval fails
+- Snow albedo saturation
+- Cloud cover persistence
+
+Этот set is canonical, NOT a data gap. Reference baseline asset
+`RuPlumeScan/baselines/reference_CH4_2019_2025_v1` correctly contains только эти
+7 months. Tool-paper scope: "Detection covers все months с usable TROPOMI
+retrievals over Western Siberia." Honest и accurate.
+
+Implementation: `rca.detection_helpers.REFERENCE_AVAILABLE_MONTHS = [1,3,4,6,7,9,10]`.
+Orchestrator iterates over этот subset only.
+
 ### 3.3. QA filtering (Lorente 2021)
 
 Без изменений с v2.2:
@@ -788,6 +825,40 @@ exports.buildHybridBackground = function(observation, target_year, target_month,
 
 При `consistency_flag = true`, оба metrics используются (`mean(delta_vs_regional, delta_vs_reference)`).
 
+**Implementation note (P-02.0a Шаг 4 + GPT review #1 fix):**
+
+Python primitive `rca.detection_ch4.build_hybrid_background()` implements the
+observation-independent parts:
+
+* **Primary selection** (mode `reference_only` per Algorithm §3.5): reference value
+  where defined, regional fallback (DNA §2.1.4 — never `unmask(0)`). Reference is
+  the methodology anchor; regional is fallback only.
+* **consistency_flag** (per-month, M01..M12): metadata `|ref - reg| < 30 ppb` —
+  computed pixel-by-pixel, propagated through z-score for Шаг 6 classification
+  cascade (wetland heuristic uses it).
+* **matched_inside_reference_zone**: static zone-membership band (1 inside any
+  zapovednik polygon, 0 outside).
+
+Output: 37-band image (`primary_value_M01..M12`, `primary_sigma_M01..M12`,
+`consistency_flag_M01..M12`, `matched_inside_reference_zone`).
+
+The observation-dependent operations (`delta_vs_regional`, `delta_vs_reference`,
+`annulus_correction`) are produced separately:
+
+* `delta_primary` — by `compute_z_score` (= obs - primary_value)
+* `delta_vs_regional` / `delta_vs_reference` separation — deferred to Шаг 5
+  orchestrator (TD: track for Phase 2A v1.1; primitives currently produce single
+  `delta_primary` per Algorithm §3.5 mode `reference_only`)
+* `annulus_correction` (relative-to-annulus) — by `apply_three_condition_mask`
+  via `reduceNeighborhood` outer-disk-only (TWO-PASS, see §3.6 note)
+
+This separation allows hybrid_background to be **computed once per AOI region**
+and **reused across all orbits** in that region — significant performance gain
+for 34662-orbit batch processing.
+
+Reference: `src/py/rca/detection_ch4.py::build_hybrid_background`,
+`src/js/modules/detection_ch4.js::buildHybridBackground`.
+
 ### 3.5. Anomaly metrics (extended in v2.3)
 
 ```javascript
@@ -822,6 +893,36 @@ function computeAnomalyMetrics(hybrid_bg, observation, config) {
 }
 ```
 
+**Implementation note (P-02.0a Шаг 4 + GPT review #1 fix):**
+
+Python primitive `rca.detection_ch4.compute_z_score()` consumes the pre-computed
+`hybrid_background` from `build_hybrid_background` and orbit observation:
+
+```python
+z_image = compute_z_score(orbit_image, hybrid_background, month)
+# Returns 6-band image:
+#   z, delta_primary, primary_value, primary_sigma,
+#   consistency_flag, matched_inside_reference_zone
+```
+
+* `z = (obs - primary) / max(primary_sigma, sigma_floor)` per Algorithm §3.5
+* `sigma_floor = 15.0 ppb` constant (CH4 noise floor — prevents z-explosion)
+* No fallback logic in z-score primitive itself — clean separation from
+  `build_hybrid_background` (which handles primary selection + DNA §2.1.4
+  regional fallback)
+* `consistency_flag` propagated as band — downstream classification (Шаг 6
+  wetland heuristic) consumes it
+* `matched_inside_reference_zone` propagated — Шаг 6 classification cascade
+  Priority 1 override
+
+**Phase 2A v1 simplification:** primary uses reference-where-defined regardless
+of consistency_flag value (Algorithm §3.5 mode `reference_only`). The full
+consistency-driven primary switch (`use_reference_primary` per Algorithm
+pseudocode above) is deferred — `consistency_flag` is metadata only in v1.
+
+Reference: `src/py/rca/detection_ch4.py::compute_z_score`,
+`src/js/modules/detection_ch4.js::computeZScore`.
+
 ### 3.6. Pixel-level mask
 
 ```javascript
@@ -829,8 +930,15 @@ function ch4PixelMask(anomaly, config) {
   const z_test = anomaly.select('z').gte(config.anomaly.z_min);
   const delta_test = anomaly.select('delta_primary').gte(config.anomaly.delta_min_units);
   
-  const local_med = anomaly.select('delta_primary').focal_median({
-    kernel: makeAnnulusKernel(50000, 150000, 7000)
+  // TWO-PASS annulus implementation (см. note ниже)
+  const outer_disk_kernel = ee.Kernel.circle({
+    radius: 150000,
+    units: 'meters',
+  });
+  const local_med = anomaly.select('delta_primary').reduceNeighborhood({
+    reducer: ee.Reducer.median(),
+    kernel: outer_disk_kernel,
+    skipMasked: true,
   });
   const relative = anomaly.select('delta_primary').subtract(local_med);
   const rel_test = relative.gte(config.anomaly.relative_threshold_min_units);
@@ -838,6 +946,35 @@ function ch4PixelMask(anomaly, config) {
   return z_test.and(delta_test).and(rel_test).selfMask();
 }
 ```
+
+**Implementation note (TWO-PASS annulus, P-02.0a Шаг 4):**
+
+Annulus median computed as `outer_disk` median (150 km radius) via
+`reduceNeighborhood`, NOT as `outer_disk - inner_disk` arithmetic kernel.
+
+**Rationale:** DNA §2.1.5 prohibits arithmetic over `ee.Kernel` objects
+(non-deterministic под параллельным execution; meaningless при non-uniform
+weights). True annulus = outer-disk-only is the only DNA-compliant
+single-pass option short of constructing `ee.Kernel.fixed()` с явной weight
+matrix (deferred — Phase 2C).
+
+**Bias estimate:** inner disk (50 km) included in outer-disk computation
+contributes ~12.5% of total area weight. Maximum bias on median estimate
+when inner disk contains the anomaly: ~12% under-estimation of true annulus
+baseline. Bias direction is **conservative** — under-estimation of
+background → smaller `relative` value → fewer pixels passing
+`relative_threshold_min` → under-detection (fewer false positives, NOT
+more false negatives at the population level).
+
+**Validation:** Phase 2A v1 acceptable (false-positive control prioritized
+over recall per researcher decision Шаг 4). Phase 2B/2C may revisit if
+precision issue detected via synthetic injection sweep — when amplitude
+sweep `[10, 30, 50, 100, 200] ppb` shows recovered/injected ratio < 0.7 at
+≥30 ppb, fall back to `ee.Kernel.fixed()` annulus.
+
+Reference: `src/py/rca/detection_ch4.py::apply_three_condition_mask`,
+`src/js/modules/detection_ch4.js::applyThreeConditionMask`,
+P-02.0a Шаг 4 implementation report.
 
 ### 3.7. Object construction
 
@@ -873,9 +1010,63 @@ function buildObjects(mask, config) {
 - **`matched_inside_reference_zone`** (centroid intersects any reference zone)
 - **`nearest_reference_zone`** (closest по latitude)
 
-### 3.9. Wind attribution
+### 3.9. Wind attribution (detailed в v2.3.1, TD-0031)
 
-Без изменений с v2.2 — single ERA5 source.
+**Wind data source:** `ECMWF/ERA5/HOURLY` collection.
+
+> ⚠ **NOT** `ECMWF/ERA5_LAND/HOURLY` — has only 10m wind, не useful для column XCH₄ matching.
+
+**Primary wind level: 850hPa** (~1500m, top of typical planetary boundary layer).
+
+Rationale:
+- Column XCH₄ measurement averages tropospheric column heavily weighted toward PBL для near-surface emissions.
+- 850hPa wind direction matches better than 10m surface wind для plume-axis alignment validation.
+- 10m wind: surface-only, ne representative для column-integrated XCH₄ (atmospheric stratification может cause directional shear).
+- Mid-troposphere 500hPa available но less correlated с PBL emissions.
+
+**Wind bands extracted (per cluster centroid):**
+
+| Band | Use |
+|------|-----|
+| `u_component_of_wind_850hPa`, `v_component_of_wind_850hPa` | **PRIMARY** — wind_u, wind_v, wind_speed, wind_dir_deg |
+| `u_component_of_wind_10m`, `v_component_of_wind_10m` | sensitivity recording (`wind_u_10m`, `wind_v_10m`) |
+| `u_component_of_wind_100m`, `v_component_of_wind_100m` | sensitivity recording |
+
+**Sampling protocol:**
+
+1. Sample ERA5 hourly images within ±3h window of orbit `system:time_start`.
+2. **Vector averaging** of u и v components separately (NOT directional averaging — prevents 359°→0° wrap).
+3. Compute `wind_speed = sqrt(u² + v²)`, `wind_dir_deg = atan2(u, v) × 180/π` (atmospheric convention: direction wind is FROM, 0=N, 90=E).
+4. Plume axis from cluster geometry — eigendecomposition of pixel coordinates covariance matrix → dominant eigenvector → axis angle 0-180°.
+5. **Alignment check:**
+
+```
+angle_diff = min(|plume_axis - wind_dir|, 180 - |plume_axis - wind_dir|)  # symmetric 0-90°
+wind_consistent = angle_diff ≤ wind_alignment_threshold_deg  # 30° default
+```
+
+**Edge cases:**
+- `wind_speed < min_wind_speed_ms` (default 2 m/s): set `wind_consistent = null` (insufficient signal — stagnant air, plume axis ambiguous).
+- ERA5 hourly nearest interpolation к TROPOMI overpass time (within ±30 min preferred, ±3h tolerable).
+- Cluster < 3 px: `plume_axis_deg = null` (insufficient pixels для eigendecomposition); `wind_consistent = null`.
+
+**Recorded в event metadata:**
+
+```
+wind_level_hPa             : int = 850
+wind_u_850hPa              : float (m/s)
+wind_v_850hPa              : float
+wind_speed                 : float (m/s)
+wind_dir_deg               : float (0-360)
+wind_alignment_score       : float (0-1, = 1 - angle_diff/90)
+wind_consistent            : bool | null
+wind_source                : string = "ERA5_HOURLY_850hPa"
+# Sensitivity recordings (informational):
+wind_u_10m, wind_v_10m     : float
+wind_u_100m, wind_v_100m   : float
+```
+
+**Algorithm version:** v2.3.1 (TD-0031 patch closure).
 
 ### 3.10. Source attribution
 
@@ -902,9 +1093,84 @@ C_total = w_stat · C_stat + w_geom · C_geom + w_wind · C_wind +
 
 Discretization без изменений: very_high ≥ 0.85, high ≥ 0.65, medium ≥ 0.35, low < 0.35.
 
-### 3.12. Class assignment
+### 3.12. Class assignment (detailed в v2.3.2, RFC v2 consensus)
 
-Без изменений с v2.2.
+Per DNA §1.3 EVENT_CLASSES.
+
+**Classification cascade (first match wins):**
+
+```python
+def classify_event(cluster):
+    # Priority 1: Reference zone auto-override
+    # Industrial activity prohibited by federal law inside zapovedniks —
+    # any CH4 detection inside MUST be natural (wetland, geological seep, fire).
+    if cluster.matched_inside_reference_zone:
+        return 'diffuse_CH4'
+
+    # Priority 2: Wetland heuristic (3 of 4 conditions)
+    # Spatial structure pattern characteristic of natural wetland CH4 signal.
+    wetland_conditions = [
+        cluster.area_km2 > 1000,                    # large diffuse area
+        cluster.compactness_ratio < THRESHOLD_TBD,  # max_z / sqrt(area_km2) — diffuse vs compact
+        cluster.date_utc.month in [6, 7, 8, 9],    # JJAS peak emission season
+        cluster.nearest_source_distance_km > 100   # far from documented industrial sources
+            or cluster.nearest_source_id is None,
+    ]
+    if sum(wetland_conditions) >= 3:
+        return 'diffuse_CH4'
+
+    # Priority 3: Wind ambiguity check
+    # Plume axis не aligned с wind — could be: noise, transient, or attribution failure
+    if cluster.wind_consistent is False:
+        return 'wind_ambiguous'
+
+    # Priority 4: Industrial classification
+    # Source attribution successful + wind consistent → confirmed industrial CH4
+    # (NO2/SO2 cross-matching defer к Phase 4 multi-gas)
+    if cluster.nearest_source_id is not None:
+        return 'CH4_only'
+
+    # Default: signal-only event without source or wetland pattern
+    return 'wind_ambiguous'
+```
+
+**`compactness_ratio` definition:**
+
+```
+compactness_ratio = max_z / sqrt(area_km2)
+```
+
+High value → compact peak (industrial point source).
+Low value → diffuse pattern (wetland-like).
+
+**THRESHOLD_TBD determination protocol:**
+
+Phase 2A first 1-2 years run с `class_=null` placeholder. After ≥100 events accumulated:
+
+1. Profile distribution of `compactness_ratio` across catalog.
+2. Look для bimodal pattern (compact-industrial vs diffuse-wetland).
+3. Apply Otsu's method (или manual visual inspection) to pick threshold separating modes.
+4. Re-classify full catalog с empirically-determined threshold.
+5. Document final threshold value в Algorithm v2.3.3 patch.
+
+**Reference zone auto-override rationale:**
+
+Aligns с §3.11 confidence scoring (`matched_inside_reference_zone=true → C_total *= 0.3`). Two-layer protection:
+- Confidence downgrade в §3.11 (numeric)
+- Class auto-override в §3.12 (categorical)
+
+Both reflect DNA fact: federal-protected zones do not have industrial activity by law. Any CH₄ signal inside MUST be natural source.
+
+**Wetland heuristic rationale:**
+
+Western Siberia wetlands (Vasyugan, Ob basin) emit ~10-20 Tg CH₄/year — comparable scale к industrial. TROPOMI cannot intrinsically distinguish — both produce identical column anomaly signature. Classification stage uses spatial structure heuristics к separate.
+
+3-of-4 threshold (rather than all 4) accounts для real-world variability:
+- Some industrial events occur during JJAS (Priority 4 wins if wind aligned + source nearby)
+- Some wetland events near infrastructure (Priority 2 still triggers if 3 conditions met)
+- Borderline events (2 conditions) → Priority 3/4 cascade applies
+
+**Algorithm version:** v2.3.2 (RFC v2 classification consensus closure).
 
 ---
 
