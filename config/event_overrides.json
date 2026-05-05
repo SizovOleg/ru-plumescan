@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0",
+  "description": "Manual event attribution overrides (Algorithm §6). Loaded at attribution Step 4 of build_ch4_event_catalog.py orchestrator. Overrides applied by matching events on (lat, lon, date_utc) within tolerance_km/tolerance_days.",
+  "tolerance_km_default": 20,
+  "tolerance_days_default": 2,
+  "event_overrides": []
+}
