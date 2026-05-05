@@ -444,6 +444,60 @@ def apply_event_overrides(
 
 
 # ---------------------------------------------------------------------------
+# Helper 7: qa_flags export encoding (GEE Export.table.toAsset compatibility)
+# ---------------------------------------------------------------------------
+
+# Separator используемый при join-encoding qa_flags для export
+QA_FLAGS_SEPARATOR = ";"
+
+
+def encode_qa_flags_for_export(fc: ee.FeatureCollection) -> ee.FeatureCollection:
+    """
+    Convert qa_flags list property к semicolon-separated string before Export.
+
+    GEE Export.table.toAsset rejects List<Object> properties (initialized
+    via ee.List([]) — empty list has untyped Object element type which GEE
+    cannot serialize). Failure observed Шаг 5 first launch attempt:
+        "Unable to encode value 'qa_flags' of feature ...: invalid type
+         List<Object>. (Error code: 3)"
+
+    Solution: convert list к string at last orchestrator stage (just before
+    submit_export). Downstream consumers split на QA_FLAGS_SEPARATOR (";") к
+    recover original list. Schema documents encoded format.
+
+    Empty list → empty string "".
+    Single flag → "flag_name".
+    Multiple flags → "flag1;flag2;flag3".
+
+    Args:
+        fc: FeatureCollection с qa_flags property as ee.List
+
+    Returns: FC с qa_flags property converted к string.
+    """
+
+    def _encode(feat: ee.Feature) -> ee.Feature:
+        flags_list = ee.List(ee.Algorithms.If(feat.get("qa_flags"), feat.get("qa_flags"), []))
+        flags_str = ee.Algorithms.If(
+            flags_list.size().gt(0),
+            flags_list.join(QA_FLAGS_SEPARATOR),
+            "",
+        )
+        return feat.set("qa_flags", flags_str)
+
+    return fc.map(_encode)
+
+
+def decode_qa_flags(qa_flags_str: str) -> list[str]:
+    """Split semicolon-encoded qa_flags string back к list (downstream consumer).
+
+    Empty string → empty list. Used when reading produced catalog asset.
+    """
+    if not qa_flags_str:
+        return []
+    return qa_flags_str.split(QA_FLAGS_SEPARATOR)
+
+
+# ---------------------------------------------------------------------------
 # Helper 6: server-side source_type_category classifier
 # ---------------------------------------------------------------------------
 
@@ -625,6 +679,7 @@ __all__ = [
     "ZONE_BOUNDARY_TOLERANCE_KM",
     "REFERENCE_AVAILABLE_MONTHS",
     "VIIRS_RADIANCE_THRESHOLD_HIGH",
+    "QA_FLAGS_SEPARATOR",
     "get_zmin",
     "build_zmin_filter",
     "is_transboundary_candidate",
@@ -634,5 +689,7 @@ __all__ = [
     "load_event_overrides",
     "apply_event_overrides",
     "prepare_source_points_categories",
+    "encode_qa_flags_for_export",
+    "decode_qa_flags",
     "build_event_config",
 ]

@@ -25,6 +25,7 @@ from rca.detection_helpers import (
     KUZBASS_LAT_RANGE,
     KUZBASS_LON_RANGE,
     KUZBASS_Z_MIN,
+    QA_FLAGS_SEPARATOR,
     TRANSBOUNDARY_BACK_HOURS,
     TRANSBOUNDARY_LAT_RANGE,
     TRANSBOUNDARY_LON_MIN,
@@ -33,6 +34,7 @@ from rca.detection_helpers import (
     ZONE_BOUNDARY_TOLERANCE_KM,
     apply_event_overrides,
     build_event_config,
+    decode_qa_flags,
     get_zmin,
     is_transboundary_candidate,
     load_event_overrides,
@@ -389,6 +391,43 @@ def test_provenance_different_year_different_hash():
 # ---------------------------------------------------------------------------
 # Module integrity
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# qa_flags export encoding (Шаг 5 launch fix)
+# ---------------------------------------------------------------------------
+
+
+def test_qa_flags_separator_is_semicolon():
+    """Separator semicolon — chosen because flag names typically don't contain it."""
+    assert QA_FLAGS_SEPARATOR == ";"
+
+
+def test_decode_qa_flags_empty_string():
+    """Empty string → empty list (no flags applied)."""
+    assert decode_qa_flags("") == []
+
+
+def test_decode_qa_flags_single_flag():
+    """Single flag → single-element list."""
+    assert decode_qa_flags("manual_attribution_override") == ["manual_attribution_override"]
+
+
+def test_decode_qa_flags_multiple_flags():
+    """Semicolon-separated → multiple list elements в order."""
+    assert decode_qa_flags(
+        "transboundary_easterly_transport_suspected;zone_boundary_adjustment_applied"
+    ) == [
+        "transboundary_easterly_transport_suspected",
+        "zone_boundary_adjustment_applied",
+    ]
+
+
+def test_decode_qa_flags_no_orphan_empty_after_split():
+    """Single flag without separator → list of 1 element (not 2 with empty)."""
+    result = decode_qa_flags("flag1")
+    assert result == ["flag1"]
+    assert len(result) == 1
 
 
 def test_helpers_module_exports():

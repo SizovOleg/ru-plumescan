@@ -258,6 +258,43 @@ def test_build_hybrid_background_empty_months_raises(ee_init):
         build_hybrid_background(ref, reg, months=[])
 
 
+def test_encode_qa_flags_for_export(ee_init):
+    """Шаг 5 launch fix: qa_flags list → string before Export к asset.
+
+    Без encoding GEE rejects List<Object> с error code 3:
+        'Unable to encode value qa_flags ... invalid type List<Object>'
+    """
+    ee = ee_init
+    from rca.detection_helpers import encode_qa_flags_for_export
+
+    feat_empty = ee.Feature(
+        ee.Geometry.Point([87.0, 54.0]),
+        {"centroid_lat": 54.0, "qa_flags": []},
+    )
+    feat_single = ee.Feature(
+        ee.Geometry.Point([87.0, 54.0]),
+        {"centroid_lat": 54.0, "qa_flags": ["manual_attribution_override"]},
+    )
+    feat_multi = ee.Feature(
+        ee.Geometry.Point([87.0, 54.0]),
+        {
+            "centroid_lat": 54.0,
+            "qa_flags": [
+                "transboundary_easterly_transport_suspected",
+                "zone_boundary_adjustment_applied",
+            ],
+        },
+    )
+
+    fc = ee.FeatureCollection([feat_empty, feat_single, feat_multi])
+    encoded = encode_qa_flags_for_export(fc)
+    flags = encoded.aggregate_array("qa_flags").getInfo()
+
+    assert flags[0] == "", f"empty list should encode к empty string, got {flags[0]!r}"
+    assert flags[1] == "manual_attribution_override"
+    assert flags[2] == "transboundary_easterly_transport_suspected;zone_boundary_adjustment_applied"
+
+
 def test_apply_event_overrides_date_window_inclusive(ee_init):
     """GPT review #3 H-4 fix verification: tolerance_days=2 → 5 calendar days
     inclusive ([event-2, event+2])."""

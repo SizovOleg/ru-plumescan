@@ -56,6 +56,7 @@ from rca.detection_helpers import (  # noqa: E402
     apply_event_overrides,
     build_event_config,
     build_zmin_filter,
+    encode_qa_flags_for_export,
     load_event_overrides,
     prepare_source_points_categories,
 )
@@ -367,6 +368,12 @@ def process_year(
     # params_hash, config_id, run_id, algorithm_version, build_date)
     prov_props = provenance.to_asset_properties()
     annual_fc = annual_fc.map(lambda f: f.set(prov_props))
+
+    # Шаг 5 launch fix: convert qa_flags list к string для GEE Export
+    # compatibility (Export.table.toAsset rejects List<Object>; см.
+    # encode_qa_flags_for_export docstring). Last step before return —
+    # all helpers that operate на qa_flags must run BEFORE this point.
+    annual_fc = encode_qa_flags_for_export(annual_fc)
 
     return annual_fc
 
