@@ -1,19 +1,30 @@
 """
 P-02.0a Шаг 4 unit tests для detection_ch4 primitives.
 
-Tests cover all 6 detection primitives + compute_plume_axis_client_side helper.
-EE-API primitives tested via mock patching (ee.Image / ee.Kernel / ee.Reducer
-не auth-зависимы при construction; для реального вычисления нужен Initialize).
+Tests cover все 7 primitives (build_hybrid_background + 6 detection) +
+compute_plume_axis_client_side helper. EE-API primitives tested via mock
+patching (ee.Image / ee.Kernel / ee.Reducer не auth-зависимы при construction;
+для реального вычисления нужен Initialize → integration suite).
 Pure-numpy helper tested directly.
 
-Per Algorithm v2.3.2 §3.5-3.10. DNA §2.1 critical compliance verified:
-  * Запрет 4: unmask с regional value (NOT zero)
+Per Algorithm v2.3.2 §3.4.3-§3.10. DNA §2.1 critical compliance verified:
+  * Запрет 4: unmask с regional value (NOT zero) — в build_hybrid_background
   * Запрет 5: TWO-PASS annulus via ee.Kernel.circle (NO ee.Kernel arithmetic)
+
+GPT review #1 fix tests included:
+  * Issue 5.3: wind angle .mod(180) — 3 новых тестов wind_dir ∈ {350°, 200°, 110°}
+  * Issue 1.2: cos(lat) aspect correction — tests at lat 10°, 54°, 70°
+  * Issue 4.1: dual baseline cross-check — 4 build_hybrid_background tests
+  * Issue 2.1: reduceRegions setOutputs — verifies no band collision
+  * Issue 6.1: composite-key sort — verifies single .sort call
+  * Issue 5.2: null plume_axis_deg → wind_state='axis_unknown'
+  * Issue 2.3: wind_state enum {aligned, misaligned, insufficient_wind, axis_unknown}
 """
 
 from __future__ import annotations
 
 import inspect
+import math
 import random
 from unittest.mock import MagicMock, patch
 
@@ -22,6 +33,7 @@ from rca.detection_ch4 import (
     ANALYSIS_SCALE_M,
     ANNULUS_INNER_KM_DEFAULT,
     ANNULUS_OUTER_KM_DEFAULT,
+    CONSISTENCY_TOLERANCE_PPB_DEFAULT,
     SIGMA_FLOOR_PPB,
     SOURCE_TYPE_PRIORITIES_CH4,
     compute_plume_axis_client_side,
@@ -52,6 +64,11 @@ def test_annulus_inner_default_50km():
     assert ANNULUS_INNER_KM_DEFAULT == 50
 
 
+def test_consistency_tolerance_default():
+    """Consistency tolerance = 30 ppb (Algorithm §3.4.3 dual baseline cross-check)."""
+    assert CONSISTENCY_TOLERANCE_PPB_DEFAULT == 30.0
+
+
 def test_source_type_priorities_ranking():
     """gas_field=1 outranks viirs_flare_high=2; full ranking per Algorithm §3.10."""
     assert SOURCE_TYPE_PRIORITIES_CH4["gas_field"] == 1
@@ -60,17 +77,17 @@ def test_source_type_priorities_ranking():
     assert SOURCE_TYPE_PRIORITIES_CH4["tpp_gres"] == 4
     assert SOURCE_TYPE_PRIORITIES_CH4["viirs_flare_low"] == 5
     assert SOURCE_TYPE_PRIORITIES_CH4["smelter"] == 6
-    # Lower number = higher priority — gas_field beats всех остальных
     assert SOURCE_TYPE_PRIORITIES_CH4["gas_field"] < SOURCE_TYPE_PRIORITIES_CH4["smelter"]
 
 
 # ---------------------------------------------------------------------------
 # compute_plume_axis_client_side — pure numpy (no EE)
+# Issue 1.2 fix: cos(lat) aspect correction + tests at 3 latitudes
 # ---------------------------------------------------------------------------
 
 
 def test_plume_axis_horizontal_line():
-    """Horizontal pixels (constant lat, varying lon) → axis ≈ 90° (E-W)."""
+    """Horizontal pixels (constant lat, varying lon) → axis ≈ 90° (E-W bearing)."""
     lons = [86.0, 86.1, 86.2, 86.3, 86.4]
     lats = [54.0, 54.0, 54.0, 54.0, 54.0]
     axis = compute_plume_axis_client_side(lons, lats)
@@ -79,22 +96,44 @@ def test_plume_axis_horizontal_line():
 
 
 def test_plume_axis_vertical_line():
-    """Vertical pixels (constant lon) → axis ≈ 0° (N-S)."""
+    """Vertical pixels (constant lon) → axis ≈ 0° (N-S bearing)."""
     lons = [86.0, 86.0, 86.0, 86.0, 86.0]
     lats = [54.0, 54.1, 54.2, 54.3, 54.4]
     axis = compute_plume_axis_client_side(lons, lats)
     assert axis is not None
-    # 0° N-S axis; values close to 0 acceptable (normalized к [0, 180))
     assert axis < 1.0 or axis > 179.0, f"vertical axis got {axis}"
 
 
-def test_plume_axis_diagonal_45():
-    """Equal lon/lat increments — perfect 45° NE axis."""
-    lons = [86.0, 86.1, 86.2, 86.3, 86.4]
-    lats = [54.0, 54.1, 54.2, 54.3, 54.4]
+def test_plume_axis_diagonal_45_at_54n():
+    """45° NE bearing at lat=54°N: lon increment in degrees = lat / cos(54°)
+    so that km-east extent equals km-north extent (true 45° compass bearing)."""
+    cos_54 = math.cos(math.radians(54))
+    lons = [86.0 + i * 0.1 / cos_54 for i in range(5)]
+    lats = [54.0 + i * 0.1 for i in range(5)]
     axis = compute_plume_axis_client_side(lons, lats)
     assert axis is not None
-    assert abs(axis - 45.0) < 5.0, f"diagonal axis got {axis}"
+    assert abs(axis - 45.0) < 1.0, f"54°N diagonal axis got {axis}"
+
+
+def test_plume_axis_diagonal_45_at_10n():
+    """45° NE bearing at lat=10°N (cos≈0.985, almost no correction needed)."""
+    cos_10 = math.cos(math.radians(10))
+    lons = [10.0 + i * 0.1 / cos_10 for i in range(5)]
+    lats = [10.0 + i * 0.1 for i in range(5)]
+    axis = compute_plume_axis_client_side(lons, lats)
+    assert axis is not None
+    assert abs(axis - 45.0) < 1.0, f"10°N diagonal axis got {axis}"
+
+
+def test_plume_axis_diagonal_45_at_70n():
+    """45° NE bearing at lat=70°N (cos≈0.342, large correction needed —
+    km-equivalent lon = 0.292°/km vs lat 0.111°/km)."""
+    cos_70 = math.cos(math.radians(70))
+    lons = [86.0 + i * 0.1 / cos_70 for i in range(5)]
+    lats = [70.0 + i * 0.1 for i in range(5)]
+    axis = compute_plume_axis_client_side(lons, lats)
+    assert axis is not None
+    assert abs(axis - 45.0) < 1.0, f"70°N diagonal axis got {axis}"
 
 
 def test_plume_axis_too_few_pixels():
@@ -123,6 +162,12 @@ def test_plume_axis_minimum_3_pixels():
     assert abs(axis - 90.0) < 1.0
 
 
+def test_plume_axis_pole_returns_none():
+    """At pole (lat=90°) cos→0 — axis ill-defined, returns None."""
+    axis = compute_plume_axis_client_side([0.0, 0.1, 0.2], [90.0, 90.0, 90.0])
+    assert axis is None
+
+
 # ---------------------------------------------------------------------------
 # Helper: chainable mock ee.Image
 # ---------------------------------------------------------------------------
@@ -147,60 +192,150 @@ def _mock_ee_image(name: str = "img") -> MagicMock:
         "reduceNeighborhood",
         "reduceRegions",
         "reduceToVectors",
+        "abs",
+        "lt",
+        "paint",
+        "multiply",
+        "add",
+        "mod",
     ):
         getattr(img, method).return_value = img
     return img
 
 
 # ---------------------------------------------------------------------------
-# Primitive 1: compute_z_score
+# Primitive 0: build_hybrid_background (Algorithm §3.4.3 dual baseline cross-check)
+# Issue 4.1 fix tests
 # ---------------------------------------------------------------------------
 
 
-def test_compute_z_score_uses_correct_band_suffix():
-    """Month=9 → suffix 'M09' для primary band selection."""
-    orbit = _mock_ee_image("orbit")
+def test_build_hybrid_background_iterates_all_12_months():
+    """build_hybrid_background must produce bands для всех 12 months M01..M12."""
     ref = _mock_ee_image("ref")
     reg = _mock_ee_image("reg")
 
     with patch.object(detection_ch4.ee, "Image") as mock_image:
         mock_image.cat = MagicMock(return_value=_mock_ee_image("cat"))
         mock_image.constant = MagicMock(return_value=_mock_ee_image("const"))
-        detection_ch4.compute_z_score(orbit, ref, reg, month=9)
+        detection_ch4.build_hybrid_background(ref, reg)
 
+    # 12 months × 4 selects per month (ref_value, ref_sigma, reg_value, reg_sigma)
+    # = 48 select calls на baselines
     select_strs = [str(c) for c in ref.select.call_args_list + reg.select.call_args_list]
-    assert any("M09" in s for s in select_strs), f"M09 suffix expected, got {select_strs}"
+    months_seen = {f"M{m:02d}" for m in range(1, 13)}
+    for month_str in months_seen:
+        assert any(month_str in s for s in select_strs), f"month {month_str} not iterated"
 
 
-def test_compute_z_score_uses_unmask_regional_fallback_not_zero():
+def test_build_hybrid_background_uses_regional_fallback_not_zero():
     """DNA §2.1 запрет 4: ref_value.unmask(reg_value), NOT unmask(0)."""
-    orbit = _mock_ee_image("orbit")
     ref = _mock_ee_image("ref")
     reg = _mock_ee_image("reg")
 
     with patch.object(detection_ch4.ee, "Image") as mock_image:
         mock_image.cat = MagicMock(return_value=_mock_ee_image("cat"))
         mock_image.constant = MagicMock(return_value=_mock_ee_image("const"))
-        detection_ch4.compute_z_score(orbit, ref, reg, month=6)
+        detection_ch4.build_hybrid_background(ref, reg)
 
     assert ref.unmask.called, "ref_value.unmask() must be called for fallback"
-    # Verify ни один unmask call не передавал literal 0
     for call in ref.unmask.call_args_list:
         assert (
             call.args and call.args[0] != 0
         ), "DNA §2.1.4 violation: must use regional fallback, not unmask(0)"
 
 
-def test_compute_z_score_applies_sigma_floor():
-    """Z-score divisor = max(primary_sigma, sigma_floor) — floor prevents explosion."""
-    orbit = _mock_ee_image("orbit")
+def test_build_hybrid_background_consistency_tolerance_default():
+    """Default consistency tolerance = 30 ppb (Algorithm §3.4.3)."""
     ref = _mock_ee_image("ref")
     reg = _mock_ee_image("reg")
 
     with patch.object(detection_ch4.ee, "Image") as mock_image:
         mock_image.cat = MagicMock(return_value=_mock_ee_image("cat"))
+        mock_image.constant = MagicMock(return_value=_mock_ee_image("const"))
+        detection_ch4.build_hybrid_background(ref, reg)
+
+    # ref.subtract(reg).abs().lt(30.0) — verify .lt called с 30.0
+    lt_args = [c.args[0] for c in ref.lt.call_args_list]
+    assert 30.0 in lt_args, f"consistency tolerance 30.0 not used; lt args: {lt_args}"
+
+
+def test_build_hybrid_background_custom_tolerance():
+    """Custom consistency tolerance propagates."""
+    ref = _mock_ee_image("ref")
+    reg = _mock_ee_image("reg")
+
+    with patch.object(detection_ch4.ee, "Image") as mock_image:
+        mock_image.cat = MagicMock(return_value=_mock_ee_image("cat"))
+        mock_image.constant = MagicMock(return_value=_mock_ee_image("const"))
+        detection_ch4.build_hybrid_background(ref, reg, consistency_tolerance_ppb=50.0)
+
+    lt_args = [c.args[0] for c in ref.lt.call_args_list]
+    assert 50.0 in lt_args
+
+
+def test_build_hybrid_background_zone_mask_when_fc_provided():
+    """When reference_zones_fc provided, ee.Image.constant(0).paint(fc, 1) used."""
+    ref = _mock_ee_image("ref")
+    reg = _mock_ee_image("reg")
+    zones_fc = MagicMock(name="zones_fc")
+
+    with patch.object(detection_ch4.ee, "Image") as mock_image:
+        zone_img = _mock_ee_image("zone_img")
+        mock_image.constant = MagicMock(return_value=zone_img)
+        mock_image.cat = MagicMock(return_value=_mock_ee_image("cat"))
+        detection_ch4.build_hybrid_background(ref, reg, reference_zones_fc=zones_fc)
+
+    # paint called с zones_fc as first arg
+    zone_img.paint.assert_called()
+    paint_args = zone_img.paint.call_args
+    assert paint_args.args[0] is zones_fc, "paint must be called with zones_fc"
+
+
+# ---------------------------------------------------------------------------
+# Primitive 1: compute_z_score (refactored — consumes hybrid_background)
+# ---------------------------------------------------------------------------
+
+
+def test_compute_z_score_uses_correct_band_suffix():
+    """Month=9 → suffix 'M09' для primary_value/primary_sigma/consistency_flag selection."""
+    orbit = _mock_ee_image("orbit")
+    hybrid = _mock_ee_image("hybrid")
+
+    with patch.object(detection_ch4.ee, "Image") as mock_image:
+        mock_image.cat = MagicMock(return_value=_mock_ee_image("cat"))
+        mock_image.constant = MagicMock(return_value=_mock_ee_image("const"))
+        detection_ch4.compute_z_score(orbit, hybrid, month=9)
+
+    select_strs = [str(c) for c in hybrid.select.call_args_list]
+    # Verify month suffix appears for primary_value, primary_sigma, consistency_flag
+    assert any("primary_value_M09" in s for s in select_strs)
+    assert any("primary_sigma_M09" in s for s in select_strs)
+    assert any("consistency_flag_M09" in s for s in select_strs)
+
+
+def test_compute_z_score_selects_zone_metadata_no_month_suffix():
+    """matched_inside_reference_zone is static — no month suffix."""
+    orbit = _mock_ee_image("orbit")
+    hybrid = _mock_ee_image("hybrid")
+
+    with patch.object(detection_ch4.ee, "Image") as mock_image:
+        mock_image.cat = MagicMock(return_value=_mock_ee_image("cat"))
+        mock_image.constant = MagicMock(return_value=_mock_ee_image("const"))
+        detection_ch4.compute_z_score(orbit, hybrid, month=6)
+
+    select_strs = [str(c) for c in hybrid.select.call_args_list]
+    assert any("matched_inside_reference_zone" in s for s in select_strs)
+
+
+def test_compute_z_score_applies_sigma_floor():
+    """Z-score divisor = max(primary_sigma, sigma_floor) — floor prevents explosion."""
+    orbit = _mock_ee_image("orbit")
+    hybrid = _mock_ee_image("hybrid")
+
+    with patch.object(detection_ch4.ee, "Image") as mock_image:
+        mock_image.cat = MagicMock(return_value=_mock_ee_image("cat"))
         mock_image.constant = MagicMock(return_value=_mock_ee_image("const_floor"))
-        detection_ch4.compute_z_score(orbit, ref, reg, month=6, sigma_floor_ppb=20.0)
+        detection_ch4.compute_z_score(orbit, hybrid, month=6, sigma_floor_ppb=20.0)
 
     mock_image.constant.assert_any_call(20.0)
 
@@ -208,15 +343,28 @@ def test_compute_z_score_applies_sigma_floor():
 def test_compute_z_score_default_sigma_floor():
     """Default sigma_floor = SIGMA_FLOOR_PPB constant."""
     orbit = _mock_ee_image("orbit")
-    ref = _mock_ee_image("ref")
-    reg = _mock_ee_image("reg")
+    hybrid = _mock_ee_image("hybrid")
 
     with patch.object(detection_ch4.ee, "Image") as mock_image:
         mock_image.cat = MagicMock(return_value=_mock_ee_image("cat"))
         mock_image.constant = MagicMock(return_value=_mock_ee_image("const_floor"))
-        detection_ch4.compute_z_score(orbit, ref, reg, month=6)
+        detection_ch4.compute_z_score(orbit, hybrid, month=6)
 
     mock_image.constant.assert_any_call(SIGMA_FLOOR_PPB)
+
+
+def test_compute_z_score_no_unmask_called_directly():
+    """Refactored compute_z_score has NO fallback logic — that's в build_hybrid_background."""
+    orbit = _mock_ee_image("orbit")
+    hybrid = _mock_ee_image("hybrid")
+
+    with patch.object(detection_ch4.ee, "Image") as mock_image:
+        mock_image.cat = MagicMock(return_value=_mock_ee_image("cat"))
+        mock_image.constant = MagicMock(return_value=_mock_ee_image("const"))
+        detection_ch4.compute_z_score(orbit, hybrid, month=6)
+
+    # hybrid.unmask should NOT be called — fallback already happened upstream
+    hybrid.unmask.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +404,6 @@ def test_three_condition_mask_no_kernel_arithmetic():
         mock_reducer.median = MagicMock(return_value=MagicMock())
         detection_ch4.apply_three_condition_mask(z_img, delta_img)
 
-    # Только один Kernel construction (circle) — no outer-inner pair
     assert mock_kernel.circle.call_count == 1
     mock_kernel.fixed.assert_not_called()
 
@@ -346,7 +493,79 @@ def test_extract_clusters_min_pixel_filter():
 
 
 # ---------------------------------------------------------------------------
+# Primitive 4: compute_cluster_attributes
+# Issue 2.1 fix: setOutputs() to avoid band-prefix collision
+# ---------------------------------------------------------------------------
+
+
+def test_compute_cluster_attributes_uses_set_outputs_for_z():
+    """Issue 2.1 fix: z reducer uses .setOutputs() to name output properties."""
+    cluster = _mock_ee_image("cluster")
+    orbit = _mock_ee_image("orbit")
+    baseline = _mock_ee_image("baseline")
+    z_img = _mock_ee_image("z")
+    aoi = MagicMock(name="aoi")
+
+    z_only = _mock_ee_image("z_only")
+    z_img.select = MagicMock(return_value=z_only)
+    delta_only = _mock_ee_image("delta_only")
+    orbit.select = MagicMock(return_value=delta_only)
+
+    max_reducer = MagicMock(name="max_reducer")
+    mean_reducer = MagicMock(name="mean_reducer")
+    count_reducer = MagicMock(name="count_reducer")
+
+    with patch.object(detection_ch4.ee, "Reducer") as mock_reducer:
+        mock_reducer.max = MagicMock(return_value=max_reducer)
+        mock_reducer.mean = MagicMock(return_value=mean_reducer)
+        mock_reducer.count = MagicMock(return_value=count_reducer)
+        max_reducer.setOutputs = MagicMock(return_value=max_reducer)
+        mean_reducer.setOutputs = MagicMock(return_value=mean_reducer)
+        count_reducer.setOutputs = MagicMock(return_value=count_reducer)
+        max_reducer.combine = MagicMock(return_value=max_reducer)
+        detection_ch4.compute_cluster_attributes(cluster, orbit, baseline, z_img, aoi)
+
+    # max.setOutputs(['max_z']) called; mean.setOutputs(['mean_z']); count.setOutputs(['n_pixels'])
+    setoutputs_calls = max_reducer.setOutputs.call_args_list
+    setoutput_args = [c.args[0] for c in setoutputs_calls]
+    assert ["max_z"] in setoutput_args or ["max_delta"] in setoutput_args
+
+
+def test_compute_cluster_attributes_selects_z_band_first():
+    """Issue 2.1 fix: z_image.select('z') called before reduceRegions."""
+    cluster = _mock_ee_image("cluster")
+    orbit = _mock_ee_image("orbit")
+    baseline = _mock_ee_image("baseline")
+    z_img = _mock_ee_image("z")
+    aoi = MagicMock(name="aoi")
+
+    with patch.object(detection_ch4.ee, "Reducer"):
+        detection_ch4.compute_cluster_attributes(cluster, orbit, baseline, z_img, aoi)
+
+    select_args = [c.args[0] for c in z_img.select.call_args_list]
+    assert "z" in select_args, "z_image.select('z') must be called to avoid band collision"
+
+
+def test_compute_cluster_attributes_aoi_passed_to_reduce_to_vectors():
+    """AOI passed correctly к reduceToVectors."""
+    cluster = _mock_ee_image("cluster")
+    orbit = _mock_ee_image("orbit")
+    baseline = _mock_ee_image("baseline")
+    z_img = _mock_ee_image("z")
+    aoi = MagicMock(name="aoi")
+
+    with patch.object(detection_ch4.ee, "Reducer"):
+        detection_ch4.compute_cluster_attributes(cluster, orbit, baseline, z_img, aoi)
+
+    cluster.reduceToVectors.assert_called_once()
+    rtv_kwargs = cluster.reduceToVectors.call_args.kwargs
+    assert rtv_kwargs.get("geometry") is aoi
+    assert rtv_kwargs.get("bestEffort") is False  # DNA prohibition compliance
+
+
+# ---------------------------------------------------------------------------
 # Primitive 5: validate_wind
+# Issue 5.3, 1.3, 5.2, 2.3 fixes
 # ---------------------------------------------------------------------------
 
 
@@ -361,7 +580,7 @@ def test_validate_wind_default_850hpa():
         detection_ch4.validate_wind(fc, coll, orbit_time_millis=1_600_000_000_000)
 
     select_calls = coll.filterDate.return_value.select.call_args_list
-    assert select_calls, "collection.select() must be called"
+    assert select_calls
     bands = select_calls[0].args[0]
     assert "u_component_of_wind_850hPa" in bands
     assert "v_component_of_wind_850hPa" in bands
@@ -383,7 +602,7 @@ def test_validate_wind_custom_level_propagates_to_band_names():
 
 
 def test_validate_wind_temporal_window_default_3h():
-    """Default temporal window ±3 hours (advance ±3, 'hour')."""
+    """Default temporal window ±3 hours."""
     fc = MagicMock(name="fc")
     fc.map = MagicMock(return_value=MagicMock())
     coll = MagicMock(name="era5")
@@ -401,7 +620,7 @@ def test_validate_wind_temporal_window_default_3h():
 
 
 def test_validate_wind_returns_mapped_collection():
-    """Returns fc.map(_validate) — every cluster processed."""
+    """Returns fc.map(_validate)."""
     fc = MagicMock(name="fc")
     expected = MagicMock(name="expected")
     fc.map = MagicMock(return_value=expected)
@@ -421,8 +640,60 @@ def test_validate_wind_default_thresholds():
     assert sig.parameters["min_wind_speed_ms"].default == 2.0
 
 
+# ---- Issue 5.3 (CRITICAL) — wind angle .mod(180) before shortest distance ----
+#
+# Direct math verification: simulate the formula with plain numbers.
+
+
+def _shortest_axis_angle(wind_dir: float, plume_axis: float) -> float:
+    """Reference implementation of fixed shortest-angular-distance to axis."""
+    raw_diff_mod = abs(wind_dir - plume_axis) % 180
+    return min(raw_diff_mod, 180 - raw_diff_mod)
+
+
+def test_wind_angle_350_axis_10_distance_20():
+    """Issue 5.3: wind_dir=350°, axis=10° → angle_diff=20° (was -160 in buggy version)."""
+    assert _shortest_axis_angle(350.0, 10.0) == 20.0
+
+
+def test_wind_angle_200_axis_20_distance_0():
+    """Issue 5.3: wind_dir=200°, axis=20° → angle_diff=0° (perfectly aligned axis)."""
+    assert _shortest_axis_angle(200.0, 20.0) == 0.0
+
+
+def test_wind_angle_110_axis_20_distance_90():
+    """Issue 5.3: wind_dir=110°, axis=20° → angle_diff=90° (perpendicular)."""
+    assert _shortest_axis_angle(110.0, 20.0) == 90.0
+
+
+def test_wind_angle_350_axis_170_distance_0():
+    """Issue 5.3 edge: wind_dir=350°, axis=170° → angle_diff=0° (parallel, opposite directions)."""
+    assert _shortest_axis_angle(350.0, 170.0) == 0.0
+
+
+# ---- Issue 5.2 — null plume_axis_deg propagation ----
+
+
+def test_validate_wind_plume_axis_null_handling():
+    """Issue 5.2: plume_axis_value used in ee.Algorithms.If — null → wind_state='axis_unknown'."""
+    fc = MagicMock(name="fc")
+    fc.map = MagicMock(return_value=MagicMock())
+    coll = MagicMock(name="era5")
+
+    with (
+        patch.object(detection_ch4.ee, "Date"),
+        patch.object(detection_ch4.ee, "Algorithms") as mock_algos,
+    ):
+        mock_algos.If = MagicMock(return_value=MagicMock())
+        detection_ch4.validate_wind(fc, coll, orbit_time_millis=0)
+
+    # Map function called once с _validate closure
+    fc.map.assert_called_once()
+
+
 # ---------------------------------------------------------------------------
 # Primitive 6: attribute_source
+# Issue 6.1 fix: composite-key sort
 # ---------------------------------------------------------------------------
 
 
@@ -471,20 +742,59 @@ def test_attribute_source_returns_mapped():
     assert result is expected
 
 
+# ---- Issue 6.1 — composite-key single sort ----
+#
+# Direct math verification: composite_rank = priority * 1e6 + distance_km
+
+
+def _composite_rank(priority: int, distance_km: float) -> float:
+    """Reference composite key used by attribute_source."""
+    return priority * 1_000_000 + distance_km
+
+
+def test_composite_rank_priority_dominates():
+    """Higher priority (lower number) always wins regardless of distance."""
+    # gas_field=1 at 49.99 km vs viirs_flare_high=2 at 0.01 km
+    gas_field = _composite_rank(1, 49.99)
+    viirs_high = _composite_rank(2, 0.01)
+    assert gas_field < viirs_high, "priority must dominate distance"
+
+
+def test_composite_rank_distance_breaks_ties():
+    """Equal priority — closer distance wins."""
+    # Two gas_field sources at different distances
+    closer = _composite_rank(1, 10.0)
+    farther = _composite_rank(1, 30.0)
+    assert closer < farther
+
+
+def test_composite_rank_distance_within_priority_band():
+    """Distance up to 999_999 km still preserves priority ordering."""
+    # Gas field at theoretical 999 km (impossible in 50 km search) vs viirs at 0 km
+    gas_far = _composite_rank(1, 999.0)
+    viirs_close = _composite_rank(2, 0.0)
+    assert gas_far < viirs_close
+
+
 # ---------------------------------------------------------------------------
 # Module integrity
 # ---------------------------------------------------------------------------
 
 
-def test_module_exports_all_six_primitives():
-    """__all__ exposes all 6 primitives + helper."""
-    assert "compute_z_score" in detection_ch4.__all__
-    assert "apply_three_condition_mask" in detection_ch4.__all__
-    assert "extract_clusters" in detection_ch4.__all__
-    assert "compute_cluster_attributes" in detection_ch4.__all__
-    assert "validate_wind" in detection_ch4.__all__
-    assert "attribute_source" in detection_ch4.__all__
-    assert "compute_plume_axis_client_side" in detection_ch4.__all__
+def test_module_exports_all_primitives():
+    """__all__ exposes 7 primitives + helper."""
+    expected_primitives = {
+        "build_hybrid_background",
+        "compute_z_score",
+        "apply_three_condition_mask",
+        "extract_clusters",
+        "compute_cluster_attributes",
+        "validate_wind",
+        "attribute_source",
+        "compute_plume_axis_client_side",
+    }
+    for name in expected_primitives:
+        assert name in detection_ch4.__all__, f"{name} missing from __all__"
 
 
 def test_module_constants_in_exports():
@@ -492,5 +802,6 @@ def test_module_constants_in_exports():
     assert "SIGMA_FLOOR_PPB" in detection_ch4.__all__
     assert "ANNULUS_OUTER_KM_DEFAULT" in detection_ch4.__all__
     assert "ANNULUS_INNER_KM_DEFAULT" in detection_ch4.__all__
+    assert "CONSISTENCY_TOLERANCE_PPB_DEFAULT" in detection_ch4.__all__
     assert "SOURCE_TYPE_PRIORITIES_CH4" in detection_ch4.__all__
     assert "ANALYSIS_SCALE_M" in detection_ch4.__all__

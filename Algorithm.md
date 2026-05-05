@@ -808,6 +808,40 @@ exports.buildHybridBackground = function(observation, target_year, target_month,
 
 При `consistency_flag = true`, оба metrics используются (`mean(delta_vs_regional, delta_vs_reference)`).
 
+**Implementation note (P-02.0a Шаг 4 + GPT review #1 fix):**
+
+Python primitive `rca.detection_ch4.build_hybrid_background()` implements the
+observation-independent parts:
+
+* **Primary selection** (mode `reference_only` per Algorithm §3.5): reference value
+  where defined, regional fallback (DNA §2.1.4 — never `unmask(0)`). Reference is
+  the methodology anchor; regional is fallback only.
+* **consistency_flag** (per-month, M01..M12): metadata `|ref - reg| < 30 ppb` —
+  computed pixel-by-pixel, propagated through z-score for Шаг 6 classification
+  cascade (wetland heuristic uses it).
+* **matched_inside_reference_zone**: static zone-membership band (1 inside any
+  zapovednik polygon, 0 outside).
+
+Output: 37-band image (`primary_value_M01..M12`, `primary_sigma_M01..M12`,
+`consistency_flag_M01..M12`, `matched_inside_reference_zone`).
+
+The observation-dependent operations (`delta_vs_regional`, `delta_vs_reference`,
+`annulus_correction`) are produced separately:
+
+* `delta_primary` — by `compute_z_score` (= obs - primary_value)
+* `delta_vs_regional` / `delta_vs_reference` separation — deferred to Шаг 5
+  orchestrator (TD: track for Phase 2A v1.1; primitives currently produce single
+  `delta_primary` per Algorithm §3.5 mode `reference_only`)
+* `annulus_correction` (relative-to-annulus) — by `apply_three_condition_mask`
+  via `reduceNeighborhood` outer-disk-only (TWO-PASS, see §3.6 note)
+
+This separation allows hybrid_background to be **computed once per AOI region**
+and **reused across all orbits** in that region — significant performance gain
+for 34662-orbit batch processing.
+
+Reference: `src/py/rca/detection_ch4.py::build_hybrid_background`,
+`src/js/modules/detection_ch4.js::buildHybridBackground`.
+
 ### 3.5. Anomaly metrics (extended in v2.3)
 
 ```javascript
@@ -841,6 +875,36 @@ function computeAnomalyMetrics(hybrid_bg, observation, config) {
   ]);
 }
 ```
+
+**Implementation note (P-02.0a Шаг 4 + GPT review #1 fix):**
+
+Python primitive `rca.detection_ch4.compute_z_score()` consumes the pre-computed
+`hybrid_background` from `build_hybrid_background` and orbit observation:
+
+```python
+z_image = compute_z_score(orbit_image, hybrid_background, month)
+# Returns 6-band image:
+#   z, delta_primary, primary_value, primary_sigma,
+#   consistency_flag, matched_inside_reference_zone
+```
+
+* `z = (obs - primary) / max(primary_sigma, sigma_floor)` per Algorithm §3.5
+* `sigma_floor = 15.0 ppb` constant (CH4 noise floor — prevents z-explosion)
+* No fallback logic in z-score primitive itself — clean separation from
+  `build_hybrid_background` (which handles primary selection + DNA §2.1.4
+  regional fallback)
+* `consistency_flag` propagated as band — downstream classification (Шаг 6
+  wetland heuristic) consumes it
+* `matched_inside_reference_zone` propagated — Шаг 6 classification cascade
+  Priority 1 override
+
+**Phase 2A v1 simplification:** primary uses reference-where-defined regardless
+of consistency_flag value (Algorithm §3.5 mode `reference_only`). The full
+consistency-driven primary switch (`use_reference_primary` per Algorithm
+pseudocode above) is deferred — `consistency_flag` is metadata only in v1.
+
+Reference: `src/py/rca/detection_ch4.py::compute_z_score`,
+`src/js/modules/detection_ch4.js::computeZScore`.
 
 ### 3.6. Pixel-level mask
 
