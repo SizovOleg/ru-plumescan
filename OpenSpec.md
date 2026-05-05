@@ -584,6 +584,30 @@ existing architectural decisions. Документируются здесь дл
   4 months fail. Phase B Export batch task TBD (FAIL on first attempt с
   null-constant error — fixed via valid-zones filter + `--phase-b-only` flag).
 
+### MC-2026-05-05-P — TD-0026 closure: full GEE audit operational в CI (Phase 1 hardening complete)
+
+- Date: 2026-05-05
+- Type: Sub-implementation closure (last Phase 1 hardening blocker)
+- Affected: `KNOWN_TODOS.md` TD-0026 → RESOLVED, TD-0029 expanded с CI/auth lessons
+- Verification: workflow_dispatch run [25370718735](https://github.com/SizovOleg/ru-plumescan/actions/runs/25370718735) PASSED 9/9 assets с canonical Provenance triple, allowlist=0.
+
+**CI security setup operational:**
+- Service account: `ru-plumescan-ci-audit@nodal-thunder-481307-u1.iam.gserviceaccount.com`
+- IAM roles: `Service Usage Consumer` + `Earth Engine Resource Viewer (Beta)` — minimum required для read-only audit
+- GitHub secret: `GEE_SERVICE_ACCOUNT_KEY` (auto-wrapped in CI defensively)
+- Workflow trigger: `workflow_dispatch` с `full_gee_audit=true` parameter (manual)
+
+**Resolution chain documented (7 PRs/runs до full PASS):**
+- PR #7: `ee.ServiceAccountCredentials` для `GOOGLE_APPLICATION_CREDENTIALS` env var
+- PR #8: `printf '%s'` instead of `echo` для preserving JSON `\n` escapes
+- PR #9: Python-based write + auto-wrap defensive (handles paste artifacts)
+- IAM grants: Service Usage Consumer + Earth Engine Resource Viewer
+- IAM propagation lag: 1-2 min wait перед retest
+
+См. TD-0029 для full diagnostic procedure (8 issues spanning code и CI levels).
+
+**Phase 2A unblocking:** TD-0024 (provenance hash drift), TD-0025 (build-script integration empirically), TD-0026 (CI audit gate) all RESOLVED. Phase 2A design DevPrompt now technically unblocked.
+
 ### MC-2026-05-04-O — TD-0023 urban masking + TD-0027 per-type buffer combined (P-01.0d)
 
 - Date: 2026-05-04

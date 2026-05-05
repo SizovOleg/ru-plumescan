@@ -74,10 +74,31 @@ Final RESOLVED status pending Шаг 6 verification (Tambeyskoye + similar gas f
 
 ---
 
-## TD-0026 NEW — Setup GEE service account для CI full audit **[HIGH PRIORITY]**
+## TD-0026 — Setup GEE service account для CI full audit **[RESOLVED 2026-05-05]**
+
+**Resolution (2026-05-05):** Service account `ru-plumescan-ci-audit@nodal-thunder-481307-u1.iam.gserviceaccount.com` created с two IAM roles (`Service Usage Consumer` + `Earth Engine Resource Viewer (Beta)`). Secret `GEE_SERVICE_ACCOUNT_KEY` configured в GitHub repo secrets. Workflow `.github/workflows/audit.yml` runs full GEE audit successfully на workflow_dispatch trigger.
+
+Verification: workflow_dispatch run [25370718735](https://github.com/SizovOleg/ru-plumescan/actions/runs/25370718735) PASSED 9/9 assets с canonical provenance (3 regional CH₄/NO₂/SO₂ + 3 v1_pre_urban_mask archive copies + 2 dual_baseline_delta_CH4 + 1 reference_CH4_v1).
+
+Diagnostic chain (7 PRs/runs до full PASS):
+1. PR #7: `ee.Initialize` ignored `GOOGLE_APPLICATION_CREDENTIALS` env var → fix via explicit `ServiceAccountCredentials`
+2. PR #8: bash `echo` mangled JSON `\n` escape sequences → fix via `printf '%s'`
+3. PR #9: secret missing outer `{...}` (paste artifact) → fix via Python write + auto-wrap
+4. IAM: missing `Service Usage Consumer` → granted
+5. IAM: missing `Earth Engine Resource Viewer` → granted
+6. IAM propagation lag → wait 2 min
+7. Final PASS
+
+См. TD-0029 для full diagnostic procedure documentation.
+
+Going forward: full GEE audit available via workflow_dispatch (manual). Can be enabled на every PR push by changing `if:` condition в workflow.
+
+---
+
+## TD-0026 (original issue — preserved for historical record)
 
 - **Origin:** P-01.0c CI workflow setup 2026-05-03 (escalation per researcher directive «If auth setup needs manual configuration — escalate, не assume»).
-- **Status:** OPEN HIGH — Phase 2A production runs blocker.
+- **Status:** RESOLVED 2026-05-05.
 - **Issue:** `tools/audit_provenance_consistency.py` без `--no-gee` flag requires GEE authentication. CI workflow `.github/workflows/audit.yml` `gee-audit` job currently gated на `workflow_dispatch + full_gee_audit=true` because `GEE_SERVICE_ACCOUNT_KEY` secret не configured. Local audit remains primary gate.
 - **Required action (researcher / project owner):**
   1. Create GEE service account с **read-only** access on:
@@ -96,7 +117,29 @@ Final RESOLVED status pending Шаг 6 verification (Tambeyskoye + similar gas f
 
 ---
 
-## TD-0029 NEW — GEE implementation gotchas appendix **[LOW priority]**
+## TD-0029 — GEE implementation gotchas appendix **[LOW priority — expanded 2026-05-05]**
+
+Lessons captured during P-01.0d (2026-05-04) + TD-0026 CI auth setup (2026-05-05). 8 distinct issues encountered, all с empirical fixes. Documented здесь для future LLM-generated и human code; eventual append к Algorithm.md §15 GEE gotchas.
+
+### Code-level (P-01.0d implementation, 4 issues)
+
+1. **Lazy-evaluation hazard:** `fc.filter(...)` returns deferred reference; deleting source asset before downstream Export → "Collection asset not found". **Fix:** materialize `fc_new` from archive after Export sequence guaranteed start.
+2. **Reprojection reducer:** binary masks reprojected с default mean reducer dilute signal at low-resolution boundaries. **Fix:** `reduceResolution(MAX)` для conservative ANY-pixel-positive semantics.
+3. **Sanity coordinate sensitivity:** when buffer changes (30→50 km), previously-clean sanity points may fall within new buffer. **Fix:** move coord или document expected change.
+4. **Number/Boolean coercion:** `ee.String.equals()` returns ComputedObject; `.And()` chaining fails. `ee.List.contains()` returns Boolean. **Fix:** use `.compareTo("X").eq(0)` (returns Number), или nested `ee.Algorithms.If(...)` chain.
+
+### CI/auth-level (TD-0026 setup, 4 issues)
+
+5. **`ee.Initialize(project=...)` ignores `GOOGLE_APPLICATION_CREDENTIALS`:** unlike most google-cloud SDKs, GEE Python API doesn't auto-pick up env var. **Fix:** read JSON, extract `client_email`, construct `ee.ServiceAccountCredentials(email, key_path)`, pass explicitly.
+6. **Bash `echo "$VAR"` mangles JSON private_key:** strict bash interprets `\n` escape sequences inside string variable, corrupting service account JSON. **Fix:** `printf '%s' "$VAR"` для literal write, или write via Python (`open(path, 'w').write(os.environ['VAR'])`).
+7. **GitHub Actions secrets с multi-line JSON paste artifact:** users pasting JSON sometimes drop outer `{...}` braces. **Fix:** defensive auto-wrap inside CI script before parse.
+8. **Two-layer GEE IAM:** beyond GCP project IAM (`Service Usage Consumer`), Earth Engine has separate `roles/earthengine.viewer` permission. Missing it gives confusing error `'earthengine.computations.create' denied`. **Fix:** grant BOTH roles. Earth Engine Resource Viewer is Beta as of 2026-05.
+
+### Procedural lessons
+
+- IAM propagation can take 1-2 min — failures immediately после grant may resolve themselves
+- Granting role via "Edit principal" doesn't always preserve existing roles — verify both present after edit
+- Symptom regression (later run shows earlier-fixed error) is usually IAM propagation lag, не actual revert
 
 - **Origin:** P-01.0d implementation 2026-05-04/05 — encountered 4 distinct GEE
   Python API gotchas worth documenting for future LLM-generated и human code.
