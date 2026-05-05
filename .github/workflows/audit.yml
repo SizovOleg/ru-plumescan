@@ -60,19 +60,40 @@ jobs:
         run: |
           if [ -z "$GEE_SERVICE_ACCOUNT_KEY" ]; then
             echo "ERROR: GEE_SERVICE_ACCOUNT_KEY secret not configured."
-            echo "See .github/workflows/audit.yml header comment для setup."
             exit 1
           fi
-          # printf '%s' preserves literal content (esp. multi-line JSON с
-          # \n inside private_key field). `echo "$VAR"` interprets backslash
-          # sequences под bash в strict mode → corrupts service-account JSON.
-          printf '%s' "$GEE_SERVICE_ACCOUNT_KEY" > /tmp/gee-key.json
-          # Validate JSON parseable (early failure если secret malformed)
-          python -c "import json; json.load(open('/tmp/gee-key.json'))" || {
-            echo "ERROR: GEE_SERVICE_ACCOUNT_KEY is not valid JSON after write."
-            head -c 200 /tmp/gee-key.json
-            exit 1
-          }
+          # Write secret к file via Python — avoids ALL shell interpretation
+          # (echo backslash escapes, printf format conversions etc).
+          # Then auto-wrap if user pasted partial JSON (без outer { ... }).
+          python <<'PY'
+          import os, json, sys
+          raw = os.environ['GEE_SERVICE_ACCOUNT_KEY']
+          stripped = raw.strip()
+          # Auto-wrap defensive — if missing outer {}, add them
+          if not stripped.startswith('{'):
+              stripped = '{' + stripped
+          if not stripped.endswith('}'):
+              stripped = stripped + '}'
+          # Validate parseable
+          try:
+              data = json.loads(stripped)
+          except json.JSONDecodeError as e:
+              print(f'ERROR: secret не valid JSON even after wrap: {e}')
+              # Print structure hints (no values, no keys — just shape)
+              print(f'  raw length: {len(raw)} chars')
+              print(f'  starts с: {repr(raw[:30])}')
+              print(f'  ends с:   {repr(raw[-30:])}')
+              sys.exit(1)
+          # Verify required fields для service account
+          required = ['type', 'project_id', 'private_key', 'client_email']
+          missing = [f for f in required if f not in data]
+          if missing:
+              print(f'ERROR: service account JSON missing fields: {missing}')
+              sys.exit(1)
+          with open('/tmp/gee-key.json', 'w') as f:
+              json.dump(data, f)
+          print(f'OK: service account JSON valid, client_email={data["client_email"]}')
+          PY
           echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gee-key.json" >> $GITHUB_ENV
 
       - name: Run full audit
