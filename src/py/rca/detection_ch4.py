@@ -75,6 +75,7 @@ def build_hybrid_background(
     regional_baseline: ee.Image,
     consistency_tolerance_ppb: float = CONSISTENCY_TOLERANCE_PPB_DEFAULT,
     reference_zones_fc: ee.FeatureCollection | None = None,
+    months: list[int] | None = None,
 ) -> ee.Image:
     """
     Algorithm §3.4.3: dual baseline cross-check + reference-zone matching.
@@ -97,21 +98,26 @@ def build_hybrid_background(
       * matched_inside_reference_zone: 1 where pixel inside any zone polygon, 0
         otherwise (static — same across all months)
 
-    Returns multi-band image (37 bands total):
-      * primary_value_M01..M12          (12 bands)
-      * primary_sigma_M01..M12          (12 bands)
-      * consistency_flag_M01..M12       (12 bands)
+    Returns multi-band image:
+      * primary_value_M{NN}             (per requested month)
+      * primary_sigma_M{NN}             (per requested month)
+      * consistency_flag_M{NN}          (per requested month)
       * matched_inside_reference_zone   (1 band — month-invariant)
 
     Args:
-        reference_baseline: image с bands ref_M01..M12, sigma_M01..M12
-        regional_baseline: image с bands median_M01..M12, sigma_M01..M12
+        reference_baseline: image с bands ref_M{NN}, sigma_M{NN} for available months
+        regional_baseline: image с bands median_M{NN}, sigma_M{NN} for all 12 months
         consistency_tolerance_ppb: |ref - reg| < tolerance → consistency_flag=1
         reference_zones_fc: zapovednik polygons; if None — matched_inside_reference_zone
             = 0 everywhere (orchestrator passes real FC at runtime)
+        months: list of months [1..12] к include. Default — all 12. Set к
+            REFERENCE_AVAILABLE_MONTHS=[1,3,4,6,7,9,10] when consuming the v1
+            reference asset (TD-0034 limitation — 7 of 12 months only).
     """
+    if months is None:
+        months = list(range(1, 13))
     bands: list[ee.Image] = []
-    for month in range(1, 13):
+    for month in months:
         suffix = f"M{month:02d}"
         ref_value = reference_baseline.select(f"ref_{suffix}")
         ref_sigma = reference_baseline.select(f"sigma_{suffix}")

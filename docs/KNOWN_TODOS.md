@@ -42,6 +42,37 @@ deferrals**, не для architectural changes.
 
 ---
 
+## TD-0034 NEW — Reference baseline P-01.0a v1 has 7 of 12 months only **[MEDIUM priority — Phase 2A scope reduction]**
+
+- **Origin:** P-02.0a Шаг 5 pre-launch asset verification 2026-05-05.
+- **Status:** documented limitation — Phase 2A v1 detection restricted к 7 months.
+- **Issue:** `RuPlumeScan/baselines/reference_CH4_2019_2025_v1` (P-01.0a) only
+  contains bands `ref_M{NN}, sigma_M{NN}, lat_dist_M{NN}` для months
+  M01, M03, M04, M06, M07, M09, M10. Months M02, M05, M08, M11, M12 absent —
+  Q-mid pattern (TD-0008 user memory limit) + winter retrievals (snow/cloud).
+- **Impact:** Phase 2A CH4 detection cannot run for missing months because:
+  - `compute_z_score` selects `ref_M{NN}` band per orbit; missing band → error
+  - Build_hybrid_background requires ref bands per month
+  - Affected: ~5 of 12 months (~42%) of detection coverage lost
+  - Most significantly missing: **M08 (August)** — peak summer methane emissions
+    season; **M11/M12** — late autumn anomalies before snow cover stable
+- **Phase 2A v1 mitigation:** orchestrator iterates ONLY available months
+  (REFERENCE_AVAILABLE_MONTHS = [1,3,4,6,7,9,10] в `detection_helpers.py`).
+  Detection в other months simply not produced; no false-negative claims made.
+  Annual catalog has explicit `available_months` property documenting the gap.
+- **Resolution path:**
+  1. Investigate Q-mid pattern в P-01.0a build (TD-0008 sister issue — may need
+     12 separate batch tasks per Option C pattern)
+  2. Build extension asset `reference_CH4_2019_2025_v2` с все 12 months
+  3. Migrate orchestrator к v2 reference, drop available_months parameter
+- **Trigger:** when Phase 2A v1 catalog complete + summer/winter coverage gaps
+  documented в validation report. OR if reviewer flags missing-months gap.
+- **Effort:** 2-3 days (P-01.0a-style monthly batch rebuild + asset migration).
+- **Related:** TD-0008 (Q-mid memory limit, regional fix), TD-0010 (Kuznetsky
+  Alatau low retrieval count — may compound Q-mid issue для southern band).
+
+---
+
 ## TD-0033 NEW — Шаг 7 Kuzbass regression integration test should exercise wind_state='insufficient_wind' branch **[LOW priority]**
 
 - **Origin:** P-02.0a Шаг 4 GPT review #2 (2026-05-05) — non-blocking observation.

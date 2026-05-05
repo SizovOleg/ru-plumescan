@@ -439,3 +439,197 @@ def test_orchestrator_single_orbit_pipeline(ee_init):
     )
     n_clusters = result_fc.size().getInfo()
     assert n_clusters >= 0, "FC.size() returned non-numeric"
+
+
+# ---------------------------------------------------------------------------
+# Шаг 6 server-side classification cascade
+# ---------------------------------------------------------------------------
+
+
+def test_apply_classification_cascade_server_side(ee_init):
+    """apply_classification sets event_class per Algorithm §3.12 cascade."""
+    ee = ee_init
+    from rca.classify_events import (
+        CLASS_CH4_ONLY,
+        CLASS_DIFFUSE_CH4,
+        CLASS_WIND_AMBIGUOUS,
+        apply_classification,
+    )
+
+    # Test cases — one per cascade priority
+    feat_zone = ee.Feature(
+        ee.Geometry.Point([75.0, 60.0]),
+        {
+            "matched_inside_reference_zone": 1,
+            "area_km2": 100,
+            "month": 1,
+            "wind_consistent": False,
+        },
+    )
+    feat_wetland = ee.Feature(
+        ee.Geometry.Point([75.0, 60.0]),
+        {
+            "matched_inside_reference_zone": 0,
+            "area_km2": 5000,
+            "month": 7,
+            "nearest_source_id": None,
+            "wind_consistent": True,
+        },
+    )
+    feat_wind_ambig = ee.Feature(
+        ee.Geometry.Point([75.0, 60.0]),
+        {
+            "matched_inside_reference_zone": 0,
+            "area_km2": 100,
+            "month": 1,
+            "nearest_source_id": "kuzbass_tpp",
+            "wind_consistent": False,
+        },
+    )
+    feat_industrial = ee.Feature(
+        ee.Geometry.Point([75.0, 60.0]),
+        {
+            "matched_inside_reference_zone": 0,
+            "area_km2": 100,
+            "month": 1,
+            "nearest_source_id": "bovanenkovo_gas",
+            "nearest_source_distance_km": 10,
+            "wind_consistent": True,
+        },
+    )
+    feat_default = ee.Feature(
+        ee.Geometry.Point([75.0, 60.0]),
+        {
+            "matched_inside_reference_zone": 0,
+            "area_km2": 100,
+            "month": 1,
+            "nearest_source_id": None,
+            "wind_consistent": True,
+        },
+    )
+
+    fc = ee.FeatureCollection(
+        [feat_zone, feat_wetland, feat_wind_ambig, feat_industrial, feat_default]
+    )
+    classified = apply_classification(fc)
+    classes = classified.aggregate_array("event_class").getInfo()
+
+    assert classes[0] == CLASS_DIFFUSE_CH4, f"zone case: {classes[0]}"
+    assert classes[1] == CLASS_DIFFUSE_CH4, f"wetland case: {classes[1]}"
+    assert classes[2] == CLASS_WIND_AMBIGUOUS, f"wind ambig case: {classes[2]}"
+    assert classes[3] == CLASS_CH4_ONLY, f"industrial case: {classes[3]}"
+    assert classes[4] == CLASS_WIND_AMBIGUOUS, f"default case: {classes[4]}"
+
+
+# ---------------------------------------------------------------------------
+# Шаг 7 — Kuzbass 2022-09-20 regression integration test
+# ---------------------------------------------------------------------------
+
+
+def test_kuzbass_2022_09_20_detected(ee_init):
+    """
+    Phase 2A v1 hard gate per CLAUDE.md §5.1: Kuzbass 2022-09-20 event MUST be
+    detected с default parameters before full archive launch authorized.
+
+    Reference: pc_test1_scan.js regression baseline reported Z=3.96 в Кузбассе
+    2022-09-20. Schuit et al. 2023 documents the event.
+
+    Test scope: process September 2022 (M09) orbits over narrow Kuzbass AOI
+    (86°-89°E × 53°-55°N), apply full detection pipeline, verify ≥1 cluster
+    detected within 50 km of (87.0°E, 54.0°N) and within ±2 days.
+
+    NOTE: Kuzbass z_min strict 4.0 (TD-0018) — event must clear this stricter
+    threshold к count.
+    """
+    ee = ee_init
+    from rca.classify_events import apply_classification
+    from rca.detection_ch4 import build_hybrid_background
+    from rca.detection_helpers import REFERENCE_AVAILABLE_MONTHS, prepare_source_points_categories
+    from setup.build_ch4_event_catalog import (
+        REFERENCE_BASELINE_ASSET,
+        REFERENCE_ZONES_ASSET,
+        REGIONAL_BASELINE_ASSET,
+        SOURCE_POINTS_ASSET,
+    )
+
+    # Narrow Kuzbass AOI for speed
+    aoi = ee.Geometry.Rectangle([86.0, 53.0, 89.0, 55.0])
+
+    # Real production assets (verified existing)
+    reference_baseline = ee.Image(REFERENCE_BASELINE_ASSET)
+    regional_baseline = ee.Image(REGIONAL_BASELINE_ASSET)
+    try:
+        reference_zones = ee.FeatureCollection(REFERENCE_ZONES_ASSET)
+        _ = reference_zones.size().getInfo()
+    except Exception:
+        reference_zones = None
+
+    hybrid = build_hybrid_background(
+        reference_baseline,
+        regional_baseline,
+        consistency_tolerance_ppb=30.0,
+        reference_zones_fc=reference_zones,
+        months=REFERENCE_AVAILABLE_MONTHS,
+    )
+
+    era5 = ee.ImageCollection("ECMWF/ERA5/HOURLY")
+    raw_sources = ee.FeatureCollection(SOURCE_POINTS_ASSET)
+    source_points = prepare_source_points_categories(raw_sources)
+
+    # Process September 2022 only — narrow window для compute speed
+    import logging
+
+    logger = logging.getLogger("test_kuzbass")
+
+    # Override TROPOMI date filter inside process_month — call detect_orbit_clusters
+    # directly on Sep 18-22 orbits для tighter time bounds
+    orbit_collection = (
+        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+        .filterDate("2022-09-18", "2022-09-23")
+        .filterBounds(aoi)
+        .select("CH4_column_volume_mixing_ratio_dry_air_bias_corrected")
+    )
+    n_orbits = orbit_collection.size().getInfo()
+    if n_orbits == 0:
+        pytest.skip("No TROPOMI orbits found for Kuzbass 2022-09-18..22 window")
+
+    from setup.build_ch4_event_catalog import detect_orbit_clusters
+
+    def _per_orbit(orbit_image):
+        return detect_orbit_clusters(
+            ee.Image(orbit_image),
+            hybrid,
+            month=9,
+            aoi=aoi,
+            era5_collection=era5,
+            source_points_fc=source_points,
+        )
+
+    orbit_list = orbit_collection.toList(orbit_collection.size())
+    fcs = orbit_list.map(_per_orbit)
+    merged = ee.FeatureCollection(fcs).flatten()
+
+    # Apply classification cascade
+    classified = apply_classification(merged)
+
+    # Count detections within 50 km of Kuzbass center (87°E, 54°N)
+    target_geom = ee.Geometry.Point([87.0, 54.0]).buffer(50_000)
+    nearby = classified.filterBounds(target_geom)
+    n_nearby = nearby.size().getInfo()
+    n_total = classified.size().getInfo()
+
+    logger.warning(
+        "Kuzbass 2022-09-18..22: %d orbits, %d total clusters, %d within 50 km",
+        n_orbits,
+        n_total,
+        n_nearby,
+    )
+
+    # Phase 2A v1 acceptance criterion (CLAUDE.md §5.1):
+    # ≥1 candidate в Kuzbass within ±2 days of 2022-09-20
+    assert n_nearby >= 1, (
+        f"Kuzbass 2022-09-20 regression FAILED: 0 clusters within 50 km. "
+        f"Total clusters в AOI: {n_total}. Possible causes: z_min=4.0 too strict, "
+        f"reference baseline gap (M09 available но coverage low в Kuzbass), "
+        f"primary_value masking. Investigate before full launch."
+    )

@@ -48,26 +48,32 @@ if str(_REPO_ROOT / "src" / "py") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "src" / "py"))
 
 from rca import detection_ch4  # noqa: E402  — sys.path injected above
+from rca.classify_events import apply_classification  # noqa: E402
 from rca.detection_helpers import (  # noqa: E402
+    REFERENCE_AVAILABLE_MONTHS,
     annotate_transboundary_qa,
     annotate_zone_boundary_qa,
     apply_event_overrides,
     build_event_config,
     build_zmin_filter,
     load_event_overrides,
+    prepare_source_points_categories,
 )
 from rca.provenance import compute_provenance, write_provenance_log  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# Constants
+# Constants — verified against GEE assets 2026-05-05 (Шаг 5 pre-launch check)
 # ---------------------------------------------------------------------------
 
 PROJECT_ID = "nodal-thunder-481307-u1"
 ASSETS_ROOT = f"projects/{PROJECT_ID}/assets"
 
+# Single canonical baseline assets (NOT per-year — multi-year climatology used
+# для detection в any individual year)
 REFERENCE_BASELINE_ASSET = f"{ASSETS_ROOT}/RuPlumeScan/baselines/reference_CH4_2019_2025_v1"
-REGIONAL_BASELINE_TEMPLATE = f"{ASSETS_ROOT}/RuPlumeScan/baselines/regional_CH4_2019_{{year}}"
-REFERENCE_ZONES_ASSET = f"{ASSETS_ROOT}/RuPlumeScan/zones/zapovedniks_v1"  # may not exist
+REGIONAL_BASELINE_ASSET = f"{ASSETS_ROOT}/RuPlumeScan/baselines/regional_CH4_2019_2025"
+# Reference zones (zapovedniks) — verified path 2026-05-05
+REFERENCE_ZONES_ASSET = f"{ASSETS_ROOT}/RuPlumeScan/reference/protected_areas"
 SOURCE_POINTS_ASSET = f"{ASSETS_ROOT}/RuPlumeScan/industrial/source_points"
 
 CATALOG_ASSET_TEMPLATE = f"{ASSETS_ROOT}/RuPlumeScan/catalog/CH4/events_{{year}}"
@@ -281,23 +287,31 @@ def process_year(
             (default — all 12)
     """
     aoi = ee.Geometry.Rectangle(list(aoi_bbox))
-    months = months_subset or list(range(1, 13))
+    # TD-0034 — only 7 of 12 months have reference baseline data (M02/M05/M08/M11/M12 absent)
+    available_months = REFERENCE_AVAILABLE_MONTHS
+    months = months_subset or available_months
+    # Filter requested months к those с reference data
+    months = [m for m in months if m in available_months]
+    if not months:
+        logger.error(
+            "No requested months overlap reference availability %s — exiting",
+            available_months,
+        )
+        return ee.FeatureCollection([])
 
     logger.info("=" * 60)
-    logger.info("Processing year %d (%d months)", year, len(months))
+    logger.info("Processing year %d (%d months: %s)", year, len(months), months)
 
-    # Hybrid background — built ONCE per year (consistency_flag pre-computed for
-    # all 12 months). Algorithm §3.4.3 dual baseline cross-check.
+    # Hybrid background — built ONCE per year (consistency_flag pre-computed для
+    # available months). Algorithm §3.4.3 dual baseline cross-check.
     reference_baseline = ee.Image(REFERENCE_BASELINE_ASSET)
-    regional_baseline = ee.Image(REGIONAL_BASELINE_TEMPLATE.format(year=year))
+    regional_baseline = ee.Image(REGIONAL_BASELINE_ASSET)  # canonical multi-year asset
 
-    # Reference zones FC — optional (graceful fallback в build_hybrid_background
-    # makes matched_inside_reference_zone=0 если asset absent)
+    # Reference zones FC — verified path RuPlumeScan/reference/protected_areas
     try:
         reference_zones_fc = ee.FeatureCollection(REFERENCE_ZONES_ASSET)
-        # Trigger lazy resolution — fails fast если asset missing
-        _ = reference_zones_fc.size().getInfo()
-        logger.info("Reference zones FC loaded: %s", REFERENCE_ZONES_ASSET)
+        n_zones = reference_zones_fc.size().getInfo()
+        logger.info("Reference zones FC loaded: %d zones", n_zones)
     except Exception as exc:  # pragma: no cover — runtime path
         logger.warning("Reference zones FC unavailable (%s) — zone band = 0", exc)
         reference_zones_fc = None
@@ -307,13 +321,15 @@ def process_year(
         regional_baseline,
         consistency_tolerance_ppb=30.0,
         reference_zones_fc=reference_zones_fc,
+        months=available_months,  # TD-0034: 7 months only in v1 reference
     )
 
     # ERA5 collection (filter happens per-orbit inside validate_wind)
     era5_collection = ee.ImageCollection(ERA5_HOURLY_COLLECTION)
 
-    # Source points FC
-    source_points_fc = ee.FeatureCollection(SOURCE_POINTS_ASSET)
+    # Source points FC — preprocess to add source_type_category (Algorithm §3.10)
+    raw_source_points = ee.FeatureCollection(SOURCE_POINTS_ASSET)
+    source_points_fc = prepare_source_points_categories(raw_source_points)
 
     # Process each month
     month_fcs = []
@@ -341,6 +357,9 @@ def process_year(
     if overrides:
         logger.info("Applying %d manual overrides", len(overrides))
         annual_fc = apply_event_overrides(annual_fc, overrides)
+
+    # Шаг 6: Algorithm §3.12 5-priority classification cascade
+    annual_fc = apply_classification(annual_fc)
 
     # Attach provenance к each event (DNA §2.1 запрет 12 — every Feature has
     # params_hash, config_id, run_id, algorithm_version, build_date)

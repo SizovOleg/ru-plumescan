@@ -54,6 +54,14 @@ ZONE_BOUNDARY_TOLERANCE_KM = 100.0
 # Approximate km-per-degree-latitude (constant; lon scaling по cos(lat) elsewhere)
 KM_PER_DEG_LAT = 111.0
 
+# TD-0034 — reference baseline P-01.0a v1 has 7 of 12 months only
+# (M02, M05, M08, M11, M12 missing — Q-mid pattern + winter retrievals).
+# Detection restricted к these 7 months until reference rebuilt с remaining months.
+REFERENCE_AVAILABLE_MONTHS = [1, 3, 4, 6, 7, 9, 10]
+
+# VIIRS flare radiance threshold (Algorithm §3.10 source classification)
+VIIRS_RADIANCE_THRESHOLD_HIGH = 100.0  # nW/cm²/sr — ≥ → high, < → low
+
 
 # ---------------------------------------------------------------------------
 # Helper 1: per-region z_min (TD-0018, DNA §2.1.6)
@@ -410,6 +418,100 @@ def apply_event_overrides(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Helper 6: server-side source_type_category classifier
+# ---------------------------------------------------------------------------
+
+
+def prepare_source_points_categories(
+    source_points_fc: ee.FeatureCollection,
+    viirs_radiance_threshold: float = VIIRS_RADIANCE_THRESHOLD_HIGH,
+) -> ee.FeatureCollection:
+    """
+    Add `source_type_category` property к source_points FC server-side.
+
+    Maps (source_type, source_subtype, viirs_radiance_mean) → category per
+    Algorithm §3.10 + classify_source_types.py logic. Drops hydro/nuclear
+    power_plant entries.
+
+    Mapping:
+      * oil_gas + production_field         → gas_field           (priority 1)
+      * oil_gas + viirs_flare_proxy + r≥100 → viirs_flare_high    (priority 2)
+      * oil_gas + viirs_flare_proxy + r<100 → viirs_flare_low     (priority 5)
+      * power_plant + coal/gas/tpp_gas      → tpp_gres            (priority 4)
+      * power_plant + hydro/nuclear         → DROPPED
+      * coal_mine                           → coal_mine           (priority 3)
+      * metallurgy                          → smelter             (priority 6)
+      * (anything else)                     → unknown (default priority 999)
+
+    Server-side via ee.Algorithms.If chain. Required by attribute_source которая
+    expects `source_type_category` property.
+
+    Args:
+        source_points_fc: FC с source_type, source_subtype, viirs_radiance_mean
+        viirs_radiance_threshold: ≥ → high, < → low (default 100 nW/cm²/sr)
+
+    Returns: FC с source_type_category property added; hydro/nuclear filtered out.
+    """
+
+    def _classify(feat: ee.Feature) -> ee.Feature:
+        st = ee.String(feat.get("source_type"))
+        sst = ee.String(feat.get("source_subtype"))
+        radiance = ee.Number(
+            ee.Algorithms.If(feat.get("viirs_radiance_mean"), feat.get("viirs_radiance_mean"), 0)
+        )
+
+        # oil_gas branches
+        is_production_field = sst.compareTo("production_field").eq(0)
+        is_viirs_proxy = sst.compareTo("viirs_flare_proxy").eq(0)
+        viirs_high = radiance.gte(viirs_radiance_threshold)
+        category_oil_gas = ee.Algorithms.If(
+            is_production_field,
+            "gas_field",
+            ee.Algorithms.If(
+                is_viirs_proxy,
+                ee.Algorithms.If(viirs_high, "viirs_flare_high", "viirs_flare_low"),
+                "unknown",
+            ),
+        )
+
+        # power_plant branches: hydro/nuclear → dropped
+        is_hydro = sst.compareTo("hydro").eq(0)
+        is_nuclear = sst.compareTo("nuclear").eq(0)
+        category_pp = ee.Algorithms.If(is_hydro.Or(is_nuclear), "dropped", "tpp_gres")
+
+        # Type dispatch
+        is_oil_gas = st.compareTo("oil_gas").eq(0)
+        is_pp = st.compareTo("power_plant").eq(0)
+        is_coal = st.compareTo("coal_mine").eq(0)
+        is_metal = st.compareTo("metallurgy").eq(0)
+
+        category = ee.Algorithms.If(
+            is_oil_gas,
+            category_oil_gas,
+            ee.Algorithms.If(
+                is_pp,
+                category_pp,
+                ee.Algorithms.If(
+                    is_coal,
+                    "coal_mine",
+                    ee.Algorithms.If(is_metal, "smelter", "unknown"),
+                ),
+            ),
+        )
+
+        return feat.set("source_type_category", category)
+
+    classified = source_points_fc.map(_classify)
+    # Drop hydro/nuclear (category='dropped')
+    return classified.filter(ee.Filter.neq("source_type_category", "dropped"))
+
+
+# ---------------------------------------------------------------------------
+# Helper 5: build_event_config for compute_provenance
+# ---------------------------------------------------------------------------
+
+
 def build_event_config(target_year: int, *, config_preset: str = "default") -> dict[str, Any]:
     """
     Construct config dict для CH4 event catalog Run.
@@ -474,6 +576,8 @@ def build_event_config(target_year: int, *, config_preset: str = "default") -> d
             "step_inflation_ppb": {str(k): v for k, v in ZONE_BOUNDARY_STEP_PPB.items()},
             "tolerance_km": ZONE_BOUNDARY_TOLERANCE_KM,
         },
+        # TD-0034 — reference baseline limitation
+        "available_months": REFERENCE_AVAILABLE_MONTHS,
         "build_pipeline": "src/py/setup/build_ch4_event_catalog.py",
     }
 
@@ -494,6 +598,8 @@ __all__ = [
     "ZONE_BOUNDARIES_LAT",
     "ZONE_BOUNDARY_STEP_PPB",
     "ZONE_BOUNDARY_TOLERANCE_KM",
+    "REFERENCE_AVAILABLE_MONTHS",
+    "VIIRS_RADIANCE_THRESHOLD_HIGH",
     "get_zmin",
     "build_zmin_filter",
     "is_transboundary_candidate",
@@ -502,5 +608,6 @@ __all__ = [
     "annotate_zone_boundary_qa",
     "load_event_overrides",
     "apply_event_overrides",
+    "prepare_source_points_categories",
     "build_event_config",
 ]
