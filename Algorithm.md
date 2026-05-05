@@ -849,8 +849,15 @@ function ch4PixelMask(anomaly, config) {
   const z_test = anomaly.select('z').gte(config.anomaly.z_min);
   const delta_test = anomaly.select('delta_primary').gte(config.anomaly.delta_min_units);
   
-  const local_med = anomaly.select('delta_primary').focal_median({
-    kernel: makeAnnulusKernel(50000, 150000, 7000)
+  // TWO-PASS annulus implementation (см. note ниже)
+  const outer_disk_kernel = ee.Kernel.circle({
+    radius: 150000,
+    units: 'meters',
+  });
+  const local_med = anomaly.select('delta_primary').reduceNeighborhood({
+    reducer: ee.Reducer.median(),
+    kernel: outer_disk_kernel,
+    skipMasked: true,
   });
   const relative = anomaly.select('delta_primary').subtract(local_med);
   const rel_test = relative.gte(config.anomaly.relative_threshold_min_units);
@@ -858,6 +865,35 @@ function ch4PixelMask(anomaly, config) {
   return z_test.and(delta_test).and(rel_test).selfMask();
 }
 ```
+
+**Implementation note (TWO-PASS annulus, P-02.0a Шаг 4):**
+
+Annulus median computed as `outer_disk` median (150 km radius) via
+`reduceNeighborhood`, NOT as `outer_disk - inner_disk` arithmetic kernel.
+
+**Rationale:** DNA §2.1.5 prohibits arithmetic over `ee.Kernel` objects
+(non-deterministic под параллельным execution; meaningless при non-uniform
+weights). True annulus = outer-disk-only is the only DNA-compliant
+single-pass option short of constructing `ee.Kernel.fixed()` с явной weight
+matrix (deferred — Phase 2C).
+
+**Bias estimate:** inner disk (50 km) included in outer-disk computation
+contributes ~12.5% of total area weight. Maximum bias on median estimate
+when inner disk contains the anomaly: ~12% under-estimation of true annulus
+baseline. Bias direction is **conservative** — under-estimation of
+background → smaller `relative` value → fewer pixels passing
+`relative_threshold_min` → under-detection (fewer false positives, NOT
+more false negatives at the population level).
+
+**Validation:** Phase 2A v1 acceptable (false-positive control prioritized
+over recall per researcher decision Шаг 4). Phase 2B/2C may revisit if
+precision issue detected via synthetic injection sweep — when amplitude
+sweep `[10, 30, 50, 100, 200] ppb` shows recovered/injected ratio < 0.7 at
+≥30 ppb, fall back to `ee.Kernel.fixed()` annulus.
+
+Reference: `src/py/rca/detection_ch4.py::apply_three_condition_mask`,
+`src/js/modules/detection_ch4.js::applyThreeConditionMask`,
+P-02.0a Шаг 4 implementation report.
 
 ### 3.7. Object construction
 
