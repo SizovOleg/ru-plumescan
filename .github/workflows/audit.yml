@@ -63,7 +63,16 @@ jobs:
             echo "See .github/workflows/audit.yml header comment для setup."
             exit 1
           fi
-          echo "$GEE_SERVICE_ACCOUNT_KEY" > /tmp/gee-key.json
+          # printf '%s' preserves literal content (esp. multi-line JSON с
+          # \n inside private_key field). `echo "$VAR"` interprets backslash
+          # sequences под bash в strict mode → corrupts service-account JSON.
+          printf '%s' "$GEE_SERVICE_ACCOUNT_KEY" > /tmp/gee-key.json
+          # Validate JSON parseable (early failure если secret malformed)
+          python -c "import json; json.load(open('/tmp/gee-key.json'))" || {
+            echo "ERROR: GEE_SERVICE_ACCOUNT_KEY is not valid JSON after write."
+            head -c 200 /tmp/gee-key.json
+            exit 1
+          }
           echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gee-key.json" >> $GITHUB_ENV
 
       - name: Run full audit
