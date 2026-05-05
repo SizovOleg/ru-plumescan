@@ -182,9 +182,29 @@ def audit(
     """
     Run full audit. Returns dict с per-asset results.
     """
+    import os
     import ee  # lazy — only when full audit needed
 
-    ee.Initialize(project=project)
+    # CI: GOOGLE_APPLICATION_CREDENTIALS points к service account JSON.
+    # ee.Initialize() doesn't auto-pick up env var — need explicit credentials.
+    # Local dev: rely on persistent creds from `earthengine authenticate`.
+    cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if cred_path and Path(cred_path).exists():
+        # Extract service account email из key file
+        key_data = json.loads(Path(cred_path).read_text(encoding="utf-8"))
+        sa_email = key_data.get("client_email")
+        if sa_email:
+            credentials = ee.ServiceAccountCredentials(sa_email, cred_path)
+            ee.Initialize(credentials=credentials, project=project)
+        else:
+            print(
+                "WARN: GOOGLE_APPLICATION_CREDENTIALS file lacks client_email; "
+                "fallback к default Initialize",
+                file=sys.stderr,
+            )
+            ee.Initialize(project=project)
+    else:
+        ee.Initialize(project=project)
 
     allowlist = load_allowlist(allowlist_path)
     runs_log = load_runs_log(logs_path)
