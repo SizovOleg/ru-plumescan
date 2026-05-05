@@ -1,22 +1,30 @@
-# RU-PlumeScan — Algorithm v2.3.1
+# RU-PlumeScan — Algorithm v2.3.2
 
-**Версия:** 2.3.1
-**Дата:** 2026-05-05 (v2.3.1 patch — TD-0031 wind altitude specification)
+**Версия:** 2.3.2
+**Дата:** 2026-05-05 (v2.3.2 patch — RFC v2 classification cascade detail)
 **Статус:** Формальная техническая спецификация Configurable Detection Surface  
 **Соответствие DNA:** v2.2  
-**Замена:** Algorithm.md v2.3 (TD-0031 incremental patch)
+**Замена:** Algorithm.md v2.3.1 (RFC v2 incremental patch)
+
+**Изменения v2.3.1 → v2.3.2 (2026-05-05, RFC v2 consensus):**
+
+- §3.12 class assignment **detailed cascade specification** (was placeholder «Без изменений с v2.2»):
+  - **Priority 1**: `matched_inside_reference_zone=true` → `diffuse_CH4` (federal-protected zones — industrial activity prohibited by law)
+  - **Priority 2**: wetland heuristic (3 of 4 conditions) → `diffuse_CH4`
+  - **Priority 3**: `wind_consistent=false` → `wind_ambiguous`
+  - **Priority 4**: `nearest_source_id != null` → `CH4_only` (industrial)
+  - **Default**: `wind_ambiguous`
+- `compactness_ratio` threshold (THRESHOLD_TBD) determined empirically post-first-run; documented в future v2.3.3 patch.
 
 **Изменения v2.3 → v2.3.1 (2026-05-05, TD-0031):**
 
-- §3.9 wind attribution **detailed specification** (was placeholder «Без изменений с v2.2»):
-  - Wind source: `ECMWF/ERA5/HOURLY` (NOT `ERA5_LAND/HOURLY` — only has 10m)
-  - **Primary wind level: 850hPa** (~1500m, top of typical PBL — matches column-integrated XCH₄ better than 10m)
+- §3.9 wind attribution **detailed specification** (was placeholder):
+  - Wind source: `ECMWF/ERA5/HOURLY` (NOT `ERA5_LAND/HOURLY`)
+  - **Primary wind level: 850hPa** (~1500m, top of typical PBL)
   - 10m / 100m / 500hPa recorded в metadata для sensitivity analysis
-  - Alignment threshold ±30° (tighter than ±45° для near-surface — 850hPa flow more coherent)
-  - Min wind speed 2 m/s; below this `wind_consistent=null` (insufficient signal)
-  - Vector averaging (not directional) к prevent 359°→0° wrap
+  - Alignment threshold ±30°; min wind speed 2 m/s; vector averaging
 
-Closes TD-0031.
+Closes TD-0031 (v2.3.1).
 
 **Изменения v2.2 → v2.3:**
 
@@ -968,9 +976,84 @@ C_total = w_stat · C_stat + w_geom · C_geom + w_wind · C_wind +
 
 Discretization без изменений: very_high ≥ 0.85, high ≥ 0.65, medium ≥ 0.35, low < 0.35.
 
-### 3.12. Class assignment
+### 3.12. Class assignment (detailed в v2.3.2, RFC v2 consensus)
 
-Без изменений с v2.2.
+Per DNA §1.3 EVENT_CLASSES.
+
+**Classification cascade (first match wins):**
+
+```python
+def classify_event(cluster):
+    # Priority 1: Reference zone auto-override
+    # Industrial activity prohibited by federal law inside zapovedniks —
+    # any CH4 detection inside MUST be natural (wetland, geological seep, fire).
+    if cluster.matched_inside_reference_zone:
+        return 'diffuse_CH4'
+
+    # Priority 2: Wetland heuristic (3 of 4 conditions)
+    # Spatial structure pattern characteristic of natural wetland CH4 signal.
+    wetland_conditions = [
+        cluster.area_km2 > 1000,                    # large diffuse area
+        cluster.compactness_ratio < THRESHOLD_TBD,  # max_z / sqrt(area_km2) — diffuse vs compact
+        cluster.date_utc.month in [6, 7, 8, 9],    # JJAS peak emission season
+        cluster.nearest_source_distance_km > 100   # far from documented industrial sources
+            or cluster.nearest_source_id is None,
+    ]
+    if sum(wetland_conditions) >= 3:
+        return 'diffuse_CH4'
+
+    # Priority 3: Wind ambiguity check
+    # Plume axis не aligned с wind — could be: noise, transient, or attribution failure
+    if cluster.wind_consistent is False:
+        return 'wind_ambiguous'
+
+    # Priority 4: Industrial classification
+    # Source attribution successful + wind consistent → confirmed industrial CH4
+    # (NO2/SO2 cross-matching defer к Phase 4 multi-gas)
+    if cluster.nearest_source_id is not None:
+        return 'CH4_only'
+
+    # Default: signal-only event without source or wetland pattern
+    return 'wind_ambiguous'
+```
+
+**`compactness_ratio` definition:**
+
+```
+compactness_ratio = max_z / sqrt(area_km2)
+```
+
+High value → compact peak (industrial point source).
+Low value → diffuse pattern (wetland-like).
+
+**THRESHOLD_TBD determination protocol:**
+
+Phase 2A first 1-2 years run с `class_=null` placeholder. After ≥100 events accumulated:
+
+1. Profile distribution of `compactness_ratio` across catalog.
+2. Look для bimodal pattern (compact-industrial vs diffuse-wetland).
+3. Apply Otsu's method (или manual visual inspection) to pick threshold separating modes.
+4. Re-classify full catalog с empirically-determined threshold.
+5. Document final threshold value в Algorithm v2.3.3 patch.
+
+**Reference zone auto-override rationale:**
+
+Aligns с §3.11 confidence scoring (`matched_inside_reference_zone=true → C_total *= 0.3`). Two-layer protection:
+- Confidence downgrade в §3.11 (numeric)
+- Class auto-override в §3.12 (categorical)
+
+Both reflect DNA fact: federal-protected zones do not have industrial activity by law. Any CH₄ signal inside MUST be natural source.
+
+**Wetland heuristic rationale:**
+
+Western Siberia wetlands (Vasyugan, Ob basin) emit ~10-20 Tg CH₄/year — comparable scale к industrial. TROPOMI cannot intrinsically distinguish — both produce identical column anomaly signature. Classification stage uses spatial structure heuristics к separate.
+
+3-of-4 threshold (rather than all 4) accounts для real-world variability:
+- Some industrial events occur during JJAS (Priority 4 wins if wind aligned + source nearby)
+- Some wetland events near infrastructure (Priority 2 still triggers if 3 conditions met)
+- Borderline events (2 conditions) → Priority 3/4 cascade applies
+
+**Algorithm version:** v2.3.2 (RFC v2 classification consensus closure).
 
 ---
 
