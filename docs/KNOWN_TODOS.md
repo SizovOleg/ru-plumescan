@@ -42,6 +42,36 @@ deferrals**, не для architectural changes.
 
 ---
 
+## TD-0035 NEW — apply_event_overrides graph depth scaling **[LOW priority — track first catalog launch]**
+
+- **Origin:** P-02.0a Шаг 5+6+7 GPT review #3 finding 2026-05-05.
+- **Status:** acceptable Phase 2A v1; track if catalog grows beyond manual review threshold.
+- **Issue:** `rca/detection_helpers.py::apply_event_overrides` iterates client-side
+  over override entries and applies `events_fc.map(...)` per entry. For typical
+  Phase 2A v1 scope (<20 manual overrides total), graph depth stays well within
+  EE serialization limits (~256 nodes per task). At >50 overrides, graph
+  serialization risk increases.
+- **Detection:** monitor catalog growth. Trigger refactor если:
+  - Override count >50 в `config/event_overrides.json`
+  - "User memory limit exceeded" or "FeatureCollection.map: Computation timed
+    out" errors appear на launch
+- **Fix path (если triggered):** refactor к single `.map()` call с composite
+  filter built from override list:
+  ```python
+  composite_filter = ee.Filter.Or(*[
+      ee.Filter.And(
+          ee.Filter.lt("centroid_lat_diff", tol_lat),
+          ee.Filter.lt("centroid_lon_diff", tol_lon),
+          ee.Filter.dateRangeContains("orbit_date_millis", date_min, date_max),
+      ) for entry in overrides
+  ])
+  ```
+  And for each-feature: derive matched override server-side via .filter() chain.
+- **Effort:** 2-3 hours (refactor + tests + verification на real catalog).
+- **Trigger:** override count >50 OR launch failure.
+
+---
+
 ## TD-0034 NEW — Reference baseline P-01.0a v1 has 7 of 12 months only **[MEDIUM priority — Phase 2A scope reduction]**
 
 - **Origin:** P-02.0a Шаг 5 pre-launch asset verification 2026-05-05.

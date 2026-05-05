@@ -223,6 +223,94 @@ def test_compute_z_score_sigma_floor_applied(ee_init):
 # ---------------------------------------------------------------------------
 
 
+def test_extract_clusters_single_band_output(ee_init):
+    """GPT review #3 H-6: extract_clusters output MUST be single-band ('labels').
+
+    `connectedComponents` returns multi-band image (input band + 'labels').
+    Without `.select('labels')` fix, downstream `reduceToVectors` errors с
+    'Need 1+0 bands for Reducer.countEvery, image has 2'. Regression guard.
+    """
+    ee = ee_init
+    from rca.detection_ch4 import extract_clusters
+
+    # Synthetic mask: 1 inside small box, masked elsewhere
+    aoi = ee.Geometry.Rectangle([86.0, 54.0, 86.5, 54.5])
+    inner_box = ee.Geometry.Rectangle([86.1, 54.1, 86.2, 54.2])
+    mask_image = (
+        ee.Image.constant(0).clip(aoi).where(ee.Image.constant(1).clip(inner_box), 1).selfMask()
+    )
+
+    cluster_image = extract_clusters(mask_image, min_cluster_px=1, connectedness=8)
+    band_names = cluster_image.bandNames().getInfo()
+    assert band_names == ["labels"], f"expected single 'labels' band, got {band_names}"
+
+
+def test_build_hybrid_background_empty_months_raises(ee_init):
+    """GPT review #3 H-7: build_hybrid_background must reject empty months list."""
+    import pytest as _pytest
+
+    ee = ee_init
+    from rca.detection_ch4 import build_hybrid_background
+
+    ref = ee.Image.constant(1880).rename("ref_M01")
+    reg = ee.Image.constant(1900).rename("median_M01")
+    with _pytest.raises(ValueError, match="months list must not be empty"):
+        build_hybrid_background(ref, reg, months=[])
+
+
+def test_apply_event_overrides_date_window_inclusive(ee_init):
+    """GPT review #3 H-4 fix verification: tolerance_days=2 → 5 calendar days
+    inclusive ([event-2, event+2])."""
+    ee = ee_init
+    from rca.detection_helpers import apply_event_overrides
+
+    # Build features for 7 days around 2022-09-20: 09-17 to 09-23
+    feats = []
+    for day in range(17, 24):  # 17, 18, 19, 20, 21, 22, 23
+        ts = ee.Date(f"2022-09-{day:02d}T12:00:00").millis()
+        feats.append(
+            ee.Feature(
+                ee.Geometry.Point([87.0, 54.0]),
+                {
+                    "centroid_lat": 54.0,
+                    "centroid_lon": 87.0,
+                    "orbit_date_millis": ts,
+                    "qa_flags": [],
+                    "day_label": day,
+                },
+            )
+        )
+    fc = ee.FeatureCollection(feats)
+
+    overrides = [
+        {
+            "centroid_lat": 54.0,
+            "centroid_lon": 87.0,
+            "event_date": "2022-09-20",
+            "tolerance_km": 30,
+            "tolerance_days": 2,
+            "manual_source_id": "kuzbass_test",
+            "manual_source_type": "coal_mine",
+        }
+    ]
+    result = apply_event_overrides(fc, overrides)
+    # Get all features' day_label + manual_source_id
+    matched_days = (
+        result.filter(ee.Filter.eq("manual_source_id", "kuzbass_test"))
+        .aggregate_array("day_label")
+        .getInfo()
+    )
+    matched_days_sorted = sorted(matched_days)
+    # Expect: 18, 19, 20, 21, 22 (5 days, ±2 inclusive); NOT 17, 23
+    assert matched_days_sorted == [
+        18,
+        19,
+        20,
+        21,
+        22,
+    ], f"H-4 off-by-one regression: expected days [18,19,20,21,22], got {matched_days_sorted}"
+
+
 def test_cluster_attributes_property_names_no_band_collision(ee_init):
     """Issue 2.1: setOutputs ensures max_z/mean_z/n_pixels/max_delta/mean_delta —
     NOT band-prefixed (z_max would have been the silent failure mode)."""

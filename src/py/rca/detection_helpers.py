@@ -179,27 +179,46 @@ def annotate_transboundary_qa(
         wind_window = era5_collection.filterDate(
             sample_date.advance(-1, "hour"), sample_date.advance(1, "hour")
         ).select([band_u, band_v])
-        mean_wind = wind_window.mean()
 
+        # GPT review #3 H-5 fix: ERA5 archive may have hour-level gaps (rare,
+        # но real). If window is empty, mean() returns masked image → reduceRegion
+        # returns null sample → wind_dir undefined → easterly check breaks. Guard
+        # via ee.Algorithms.If: skip annotation gracefully когда window empty.
+        window_has_data = wind_window.size().gt(0)
+
+        # Provide fallback constants для empty-window case (unused but keeps graph valid)
+        u_fallback = ee.Number(0)
+        v_fallback = ee.Number(0)
+
+        # Compute wind only когда window non-empty AND in_zone
+        # (else branches return safe defaults to keep graph type-stable)
+        mean_wind = wind_window.mean()
         centroid_geom = ee.Geometry.Point([centroid_lon, centroid_lat])
-        sample = mean_wind.reduceRegion(
-            reducer=ee.Reducer.first(), geometry=centroid_geom, scale=27830
+        sample = ee.Dictionary(
+            ee.Algorithms.If(
+                window_has_data,
+                mean_wind.reduceRegion(
+                    reducer=ee.Reducer.first(), geometry=centroid_geom, scale=27830
+                ),
+                ee.Dictionary({band_u: u_fallback, band_v: v_fallback}),
+            )
         )
-        u = ee.Number(sample.get(band_u))
-        v = ee.Number(sample.get(band_v))
+        u = ee.Number(ee.Algorithms.If(sample.get(band_u), sample.get(band_u), u_fallback))
+        v = ee.Number(ee.Algorithms.If(sample.get(band_v), sample.get(band_v), v_fallback))
         # Wind FROM-direction (atmospheric convention; same formula as validate_wind)
         wind_to_deg = u.atan2(v).multiply(180.0 / math.pi).add(360).mod(360)
         wind_dir = wind_to_deg.add(180).mod(360)
 
         easterly = wind_dir.gte(EASTERLY_RANGE_DEG[0]).And(wind_dir.lte(EASTERLY_RANGE_DEG[1]))
-        flag_applies = in_zone.And(easterly)
+        # H-5: only flag когда in_zone AND wind data was actually available
+        flag_applies = in_zone.And(easterly).And(window_has_data)
 
         existing_flags = ee.List(feat.get("qa_flags"))
         new_flag = "transboundary_easterly_transport_suspected"
         new_flags = ee.Algorithms.If(flag_applies, existing_flags.add(new_flag), existing_flags)
         return feat.set("qa_flags", new_flags).set(
             "transboundary_back_wind_dir_deg",
-            ee.Algorithms.If(in_zone, wind_dir, None),
+            ee.Algorithms.If(in_zone.And(window_has_data), wind_dir, None),
         )
 
     # Initialize qa_flags as empty list если absent (defensive — orchestrator should set)
@@ -366,6 +385,11 @@ def apply_event_overrides(
             continue  # malformed entry — skip
 
         ovr_date = ee.Date(ovr_date_str)
+        # GPT review #3 H-4 fix: ±tol_days inclusive window = (2*tol+1) calendar days.
+        # Example: ovr_date=2022-09-20, tol=2 → window [2022-09-18T00:00, 2022-09-23T00:00),
+        # captures 09-18, 09-19, 09-20, 09-21, 09-22 (5 calendar days).
+        # date_min: midnight of (event - tol_days) — inclusive lower bound
+        # date_max: midnight of (event + tol_days + 1) — exclusive upper bound (use ts.lt)
         date_min = ovr_date.advance(-tol_days, "day").millis()
         date_max = ovr_date.advance(tol_days + 1, "day").millis()
         # Spatial tolerance в degrees (rough — orchestrator-side filter; precise
@@ -389,7 +413,8 @@ def apply_event_overrides(
             ts = ee.Number(feat.get("orbit_date_millis"))
             lat_match = lat.subtract(_ovr_lat).abs().lte(_tol_lat)
             lon_match = lon.subtract(_ovr_lon).abs().lte(_tol_lon)
-            date_match = ts.gte(_date_min).And(ts.lte(_date_max))
+            # H-4: exclusive upper bound (ts.lt) — see date_max construction above
+            date_match = ts.gte(_date_min).And(ts.lt(_date_max))
             matches = lat_match.And(lon_match).And(date_match)
 
             existing = ee.List(feat.get("qa_flags"))

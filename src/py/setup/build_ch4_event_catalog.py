@@ -236,11 +236,13 @@ def process_month(
         next_year = year + 1
     month_end = f"{next_year}-{next_month:02d}-01"
 
+    # GPT review #3 C-1 fix: do NOT pre-select target band — primitives select
+    # what they need internally (compute_z_score uses target_band parameter).
+    # Pre-selection here would strip QA bands which downstream code may need.
     collection = (
         ee.ImageCollection(TROPOMI_CH4_COLLECTION)
         .filterDate(month_start, month_end)
         .filterBounds(aoi)
-        .select(TROPOMI_CH4_BAND)
     )
 
     def _per_orbit(orbit_image: ee.Image) -> ee.FeatureCollection:
@@ -529,6 +531,33 @@ def main() -> int:
         # Submit Export
         if args.launch_year is None and not args.full_launch:
             logger.info("--year mode: plan only (no submit). Use --launch-year к actually run.")
+            continue
+
+        # GPT review #3 C-2 fix: empty FC guard — don't waste batch quota on
+        # zero-event year (would create empty asset). Happens when months_subset
+        # filtered out все available reference months.
+        try:
+            n_events = annual_fc.size().getInfo()
+        except Exception as exc:
+            logger.warning("Could not pre-check FC size (%s) — proceeding к submit", exc)
+            n_events = -1  # unknown; proceed but log
+        if n_events == 0:
+            logger.error(
+                "Year %d produced 0 events (likely months filtered out OR detection "
+                "found nothing). Skipping export to avoid empty asset.",
+                year,
+            )
+            write_provenance_log(
+                prov,
+                status="SKIPPED_EMPTY",
+                gas="CH4",
+                period=f"2019_{year}",
+                asset_id=asset_id,
+                extra={
+                    "reason": "zero_events_after_pipeline",
+                    "n_overrides": len(overrides),
+                },
+            )
             continue
 
         # STARTED log

@@ -116,6 +116,13 @@ def build_hybrid_background(
     """
     if months is None:
         months = list(range(1, 13))
+    # GPT review #3 H-7 fix: guard empty months — would produce single-band image
+    # с only matched_inside_reference_zone, breaking downstream compute_z_score.
+    if len(months) == 0:
+        raise ValueError(
+            "build_hybrid_background: months list must not be empty "
+            "(downstream compute_z_score requires primary_value_M{NN} bands)"
+        )
     bands: list[ee.Image] = []
     for month in months:
         suffix = f"M{month:02d}"
