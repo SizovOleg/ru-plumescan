@@ -23,9 +23,11 @@ from rca.common_schema import (
     GAS_TYPES,
     SCHEMA_VERSION,
     SOURCE_CATALOGS,
+    VALID_QA_FLAGS,
     from_dict,
     to_geojson_feature,
     validate_batch,
+    validate_qa_flags,
 )
 
 # --------------------------------------------------------------------------- #
@@ -519,3 +521,91 @@ def test_source_catalogs_includes_required() -> None:
     """Базовые reference catalogs должны быть в списке."""
     required = {"ours", "schuit2023", "imeo_mars", "cams_hotspot"}
     assert required.issubset(set(SOURCE_CATALOGS))
+
+
+# --------------------------------------------------------------------------- #
+# qa_flags vocabulary tests (v1.1, P-02.0a Шаг 3)                             #
+# --------------------------------------------------------------------------- #
+
+
+def test_valid_qa_flags_pass() -> None:
+    """Single valid token — passes."""
+    assert validate_qa_flags("repeatable_event") is True
+    assert validate_qa_flags("near_zone_boundary") is True
+    assert validate_qa_flags("transboundary_easterly_transport_suspected") is True
+
+
+def test_invalid_qa_flag_token_fails() -> None:
+    """Unknown token — fails."""
+    assert validate_qa_flags("not_a_real_flag") is False
+    assert validate_qa_flags("repeatable_event,unknown_token") is False
+
+
+def test_empty_qa_flags_passes() -> None:
+    """None / empty string — valid (no flags)."""
+    assert validate_qa_flags(None) is True
+    assert validate_qa_flags("") is True
+
+
+def test_combined_qa_flags_pass() -> None:
+    """Multiple valid tokens comma-separated — pass."""
+    flags = "repeatable_event,near_zone_boundary,wind_speed_below_threshold"
+    assert validate_qa_flags(flags) is True
+
+
+def test_qa_flags_whitespace_handling() -> None:
+    """Whitespace around tokens stripped properly."""
+    assert validate_qa_flags(" repeatable_event ") is True
+    assert validate_qa_flags("repeatable_event , near_zone_boundary") is True
+
+
+def test_qa_flags_field_validator_via_from_dict() -> None:
+    """Schema field validator integrates с validate_qa_flags."""
+    base = {
+        "event_id": "ours_CH4_20220920_540000_870000",
+        "source_catalog": "schuit2023",
+        "source_event_id": "ext_001",
+        "ingestion_date": date(2022, 9, 20),
+        "gas": "CH4",
+        "date_utc": date(2022, 9, 20),
+        "lon": 87.0,
+        "lat": 54.0,
+        "qa_flags": "repeatable_event,near_zone_boundary",
+    }
+    event = from_dict(base)
+    assert event.qa_flags == "repeatable_event,near_zone_boundary"
+
+
+def test_qa_flags_field_validator_rejects_invalid() -> None:
+    """Schema rejects invalid token via Pydantic validator."""
+    base = {
+        "event_id": "ours_CH4_20220920_540000_870000",
+        "source_catalog": "schuit2023",
+        "source_event_id": "ext_001",
+        "ingestion_date": date(2022, 9, 20),
+        "gas": "CH4",
+        "date_utc": date(2022, 9, 20),
+        "lon": 87.0,
+        "lat": 54.0,
+        "qa_flags": "garbage_token",
+    }
+    with pytest.raises(PydanticValidationError, match="invalid tokens"):
+        from_dict(base)
+
+
+def test_valid_qa_flags_set_completeness() -> None:
+    """VALID_QA_FLAGS contains все 11 expected tokens."""
+    expected = {
+        "repeatable_event",
+        "single_detection_candidate",
+        "single_detection_winter_bias",
+        "winter_sparse_sampling",
+        "transboundary_easterly_transport_suspected",
+        "near_zone_boundary",
+        "consistency_tolerance_inflated",
+        "wind_speed_below_threshold",
+        "manual_attribution_override",
+        "synthetic_injection_test",
+        "regression_test_event",
+    }
+    assert expected == VALID_QA_FLAGS
