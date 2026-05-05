@@ -1,10 +1,22 @@
-# RU-PlumeScan — Algorithm v2.3
+# RU-PlumeScan — Algorithm v2.3.1
 
-**Версия:** 2.3  
-**Дата:** 2026-04-26  
+**Версия:** 2.3.1
+**Дата:** 2026-05-05 (v2.3.1 patch — TD-0031 wind altitude specification)
 **Статус:** Формальная техническая спецификация Configurable Detection Surface  
 **Соответствие DNA:** v2.2  
-**Замена:** Algorithm.md v2.2 (archived)
+**Замена:** Algorithm.md v2.3 (TD-0031 incremental patch)
+
+**Изменения v2.3 → v2.3.1 (2026-05-05, TD-0031):**
+
+- §3.9 wind attribution **detailed specification** (was placeholder «Без изменений с v2.2»):
+  - Wind source: `ECMWF/ERA5/HOURLY` (NOT `ERA5_LAND/HOURLY` — only has 10m)
+  - **Primary wind level: 850hPa** (~1500m, top of typical PBL — matches column-integrated XCH₄ better than 10m)
+  - 10m / 100m / 500hPa recorded в metadata для sensitivity analysis
+  - Alignment threshold ±30° (tighter than ±45° для near-surface — 850hPa flow more coherent)
+  - Min wind speed 2 m/s; below this `wind_consistent=null` (insufficient signal)
+  - Vector averaging (not directional) к prevent 359°→0° wrap
+
+Closes TD-0031.
 
 **Изменения v2.2 → v2.3:**
 
@@ -873,9 +885,63 @@ function buildObjects(mask, config) {
 - **`matched_inside_reference_zone`** (centroid intersects any reference zone)
 - **`nearest_reference_zone`** (closest по latitude)
 
-### 3.9. Wind attribution
+### 3.9. Wind attribution (detailed в v2.3.1, TD-0031)
 
-Без изменений с v2.2 — single ERA5 source.
+**Wind data source:** `ECMWF/ERA5/HOURLY` collection.
+
+> ⚠ **NOT** `ECMWF/ERA5_LAND/HOURLY` — has only 10m wind, не useful для column XCH₄ matching.
+
+**Primary wind level: 850hPa** (~1500m, top of typical planetary boundary layer).
+
+Rationale:
+- Column XCH₄ measurement averages tropospheric column heavily weighted toward PBL для near-surface emissions.
+- 850hPa wind direction matches better than 10m surface wind для plume-axis alignment validation.
+- 10m wind: surface-only, ne representative для column-integrated XCH₄ (atmospheric stratification может cause directional shear).
+- Mid-troposphere 500hPa available но less correlated с PBL emissions.
+
+**Wind bands extracted (per cluster centroid):**
+
+| Band | Use |
+|------|-----|
+| `u_component_of_wind_850hPa`, `v_component_of_wind_850hPa` | **PRIMARY** — wind_u, wind_v, wind_speed, wind_dir_deg |
+| `u_component_of_wind_10m`, `v_component_of_wind_10m` | sensitivity recording (`wind_u_10m`, `wind_v_10m`) |
+| `u_component_of_wind_100m`, `v_component_of_wind_100m` | sensitivity recording |
+
+**Sampling protocol:**
+
+1. Sample ERA5 hourly images within ±3h window of orbit `system:time_start`.
+2. **Vector averaging** of u и v components separately (NOT directional averaging — prevents 359°→0° wrap).
+3. Compute `wind_speed = sqrt(u² + v²)`, `wind_dir_deg = atan2(u, v) × 180/π` (atmospheric convention: direction wind is FROM, 0=N, 90=E).
+4. Plume axis from cluster geometry — eigendecomposition of pixel coordinates covariance matrix → dominant eigenvector → axis angle 0-180°.
+5. **Alignment check:**
+
+```
+angle_diff = min(|plume_axis - wind_dir|, 180 - |plume_axis - wind_dir|)  # symmetric 0-90°
+wind_consistent = angle_diff ≤ wind_alignment_threshold_deg  # 30° default
+```
+
+**Edge cases:**
+- `wind_speed < min_wind_speed_ms` (default 2 m/s): set `wind_consistent = null` (insufficient signal — stagnant air, plume axis ambiguous).
+- ERA5 hourly nearest interpolation к TROPOMI overpass time (within ±30 min preferred, ±3h tolerable).
+- Cluster < 3 px: `plume_axis_deg = null` (insufficient pixels для eigendecomposition); `wind_consistent = null`.
+
+**Recorded в event metadata:**
+
+```
+wind_level_hPa             : int = 850
+wind_u_850hPa              : float (m/s)
+wind_v_850hPa              : float
+wind_speed                 : float (m/s)
+wind_dir_deg               : float (0-360)
+wind_alignment_score       : float (0-1, = 1 - angle_diff/90)
+wind_consistent            : bool | null
+wind_source                : string = "ERA5_HOURLY_850hPa"
+# Sensitivity recordings (informational):
+wind_u_10m, wind_v_10m     : float
+wind_u_100m, wind_v_100m   : float
+```
+
+**Algorithm version:** v2.3.1 (TD-0031 patch closure).
 
 ### 3.10. Source attribution
 
