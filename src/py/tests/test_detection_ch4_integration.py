@@ -303,3 +303,139 @@ def test_validate_wind_axis_unknown_state(ee_init):
     ), f"Expected 'axis_unknown', got {feat_props.get('wind_state')}"
     # wind_consistent should be null (None) when axis unknown
     assert feat_props.get("wind_consistent") is None
+
+
+# ---------------------------------------------------------------------------
+# Шаг 5 orchestrator helpers (server-side functions)
+# ---------------------------------------------------------------------------
+
+
+def test_zmin_filter_keeps_kuzbass_with_high_z(ee_init):
+    """build_zmin_filter keeps Kuzbass cluster (lat=54, lon=87) с max_z=4.5."""
+    ee = ee_init
+    from rca.detection_helpers import build_zmin_filter
+
+    feat_kuzbass_high = ee.Feature(
+        ee.Geometry.Point([87.0, 54.0]),
+        {"centroid_lat": 54.0, "centroid_lon": 87.0, "max_z": 4.5},
+    )
+    feat_kuzbass_low = ee.Feature(
+        ee.Geometry.Point([87.0, 54.0]),
+        {"centroid_lat": 54.0, "centroid_lon": 87.0, "max_z": 3.5},
+    )
+    feat_yamal = ee.Feature(
+        ee.Geometry.Point([75.0, 70.0]),
+        {"centroid_lat": 70.0, "centroid_lon": 75.0, "max_z": 3.5},
+    )
+    fc = ee.FeatureCollection([feat_kuzbass_high, feat_kuzbass_low, feat_yamal])
+
+    filtered = fc.filter(build_zmin_filter())
+    n_kept = filtered.size().getInfo()
+    # Expected: kuzbass_high (kept), kuzbass_low (DROPPED — <4.0 in Kuzbass), yamal (kept — ≥3.0)
+    assert n_kept == 2, f"expected 2 kept, got {n_kept}"
+
+
+def test_annotate_zone_boundary_qa_adds_flag_at_57_5(ee_init):
+    """annotate_zone_boundary_qa adds qa_flag для cluster near 57.5°N."""
+    ee = ee_init
+    from rca.detection_helpers import annotate_zone_boundary_qa
+
+    feat_near = ee.Feature(
+        ee.Geometry.Point([75.0, 57.6]),  # within 100 km of 57.5°N
+        {"centroid_lat": 57.6, "centroid_lon": 75.0, "qa_flags": []},
+    )
+    feat_far = ee.Feature(
+        ee.Geometry.Point([75.0, 60.0]),  # NOT near boundary
+        {"centroid_lat": 60.0, "centroid_lon": 75.0, "qa_flags": []},
+    )
+    fc = ee.FeatureCollection([feat_near, feat_far])
+
+    annotated = annotate_zone_boundary_qa(fc)
+    near_props = ee.Feature(annotated.toList(2).get(0)).toDictionary().getInfo()
+    far_props = ee.Feature(annotated.toList(2).get(1)).toDictionary().getInfo()
+
+    assert "zone_boundary_adjustment_applied" in near_props["qa_flags"]
+    assert near_props["zone_boundary_step_ppb"] == 35.0
+    assert "zone_boundary_adjustment_applied" not in far_props["qa_flags"]
+    # EE drops properties set to None — use .get() с None default для robustness
+    assert far_props.get("zone_boundary_step_ppb") is None
+
+
+def test_apply_event_overrides_matches_event(ee_init):
+    """apply_event_overrides sets manual_source_id для matching event."""
+    ee = ee_init
+    from rca.detection_helpers import apply_event_overrides
+
+    event_date = ee.Date("2022-09-20T12:00:00").millis()
+    feat = ee.Feature(
+        ee.Geometry.Point([87.0, 54.0]),
+        {
+            "centroid_lat": 54.0,
+            "centroid_lon": 87.0,
+            "orbit_date_millis": event_date,
+            "qa_flags": [],
+        },
+    )
+    fc = ee.FeatureCollection([feat])
+
+    overrides = [
+        {
+            "centroid_lat": 54.0,
+            "centroid_lon": 87.0,
+            "event_date": "2022-09-20",
+            "tolerance_km": 30,
+            "tolerance_days": 2,
+            "manual_source_id": "kuzbass_test_event",
+            "manual_source_type": "coal_mine",
+        }
+    ]
+    result = apply_event_overrides(fc, overrides)
+    props = result.first().toDictionary().getInfo()
+    assert props["manual_source_id"] == "kuzbass_test_event"
+    assert "manual_attribution_override" in props["qa_flags"]
+
+
+def test_orchestrator_single_orbit_pipeline(ee_init):
+    """End-to-end smoke test: detect_orbit_clusters runs without exception
+    on a real TROPOMI orbit + synthetic baselines + real ERA5 + small AOI."""
+    ee = ee_init
+    from rca.detection_ch4 import build_hybrid_background
+    from setup.build_ch4_event_catalog import detect_orbit_clusters
+
+    # Small Kuzbass-region AOI
+    aoi = ee.Geometry.Rectangle([86.0, 53.0, 89.0, 55.0])
+
+    # Synthetic baselines (constants)
+    ref_bands = [ee.Image.constant(1880).rename(f"ref_M{m:02d}") for m in range(1, 13)] + [
+        ee.Image.constant(20).rename(f"sigma_M{m:02d}") for m in range(1, 13)
+    ]
+    reg_bands = [ee.Image.constant(1900).rename(f"median_M{m:02d}") for m in range(1, 13)] + [
+        ee.Image.constant(25).rename(f"sigma_M{m:02d}") for m in range(1, 13)
+    ]
+    hybrid = build_hybrid_background(ee.Image.cat(ref_bands), ee.Image.cat(reg_bands))
+
+    # Real TROPOMI orbit — September 2022 over Kuzbass
+    orbit_collection = (
+        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+        .filterDate("2022-09-20", "2022-09-21")
+        .filterBounds(aoi)
+        .select("CH4_column_volume_mixing_ratio_dry_air_bias_corrected")
+    )
+    orbit_count = orbit_collection.size().getInfo()
+    if orbit_count == 0:
+        pytest.skip("no TROPOMI orbits found for Kuzbass 2022-09-20 — environment-specific")
+    orbit_image = ee.Image(orbit_collection.first())
+
+    era5 = ee.ImageCollection("ECMWF/ERA5/HOURLY")
+    source_points = ee.FeatureCollection([])
+
+    result_fc = detect_orbit_clusters(
+        orbit_image=orbit_image,
+        hybrid_background=hybrid,
+        month=9,
+        aoi=aoi,
+        era5_collection=era5,
+        source_points_fc=source_points,
+    )
+    n_clusters = result_fc.size().getInfo()
+    assert n_clusters >= 0, "FC.size() returned non-numeric"

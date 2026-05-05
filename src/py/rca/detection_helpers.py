@@ -1,0 +1,506 @@
+"""
+Detection orchestrator helpers (Phase 2A, P-02.0a Шаг 5).
+
+Pure-Python helpers + lightweight server-side functions used by
+`setup/build_ch4_event_catalog.py`. Separated from `detection_ch4`
+primitives to keep primitive module focused on Algorithm §3 mathematical
+core; helpers handle TD-0017/0018/0021 mitigations + manual overrides.
+
+Five helper categories:
+  1. get_zmin                   — per-region adaptive z_min (TD-0018, DNA §2.1.6)
+  2. is_transboundary_easterly  — TD-0017 24h-back ERA5 trajectory check
+  3. zone_boundary_step_ppb     — TD-0021 baseline_consistency tolerance inflation
+  4. apply_event_overrides      — manual attribution from event_overrides.json
+  5. build_event_config         — config dict для compute_provenance
+
+Per CLAUDE.md §1 — code English, comments Russian.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+from pathlib import Path
+from typing import Any
+
+import ee
+
+# ---------------------------------------------------------------------------
+# Constants (Phase 1c P-01.2 handoff + TD references)
+# ---------------------------------------------------------------------------
+
+# TD-0018 — Kuzbass strict z_min (P-01.2 handoff §3 — primary mitigation)
+KUZBASS_LAT_RANGE = (53.0, 55.0)
+KUZBASS_LON_RANGE = (86.0, 88.0)
+KUZBASS_Z_MIN = 4.0
+DEFAULT_Z_MIN = 3.0
+
+# TD-0017 — Transboundary easterly transport check
+TRANSBOUNDARY_LAT_RANGE = (53.0, 56.0)
+TRANSBOUNDARY_LON_MIN = 92.0
+TRANSBOUNDARY_BACK_HOURS = 24
+# Easterly = wind FROM E direction (atmospheric convention 0=N, 90=E)
+EASTERLY_RANGE_DEG = (45.0, 135.0)
+
+# TD-0021 — Zone-boundary step inflation (P-01.2 handoff quantification at 75°E)
+# Step = baseline reference discontinuity at zone-boundary latitude
+ZONE_BOUNDARIES_LAT = [57.5, 62.0]
+ZONE_BOUNDARY_STEP_PPB: dict[float, float] = {
+    57.5: 35.0,  # Kuznetsky → Yugansky transition (M07 step +34.85 ppb)
+    62.0: 16.0,  # Yugansky → Verkhne-Tazovsky transition (M07 step −16.18 ppb absolute)
+}
+ZONE_BOUNDARY_TOLERANCE_KM = 100.0
+
+# Approximate km-per-degree-latitude (constant; lon scaling по cos(lat) elsewhere)
+KM_PER_DEG_LAT = 111.0
+
+
+# ---------------------------------------------------------------------------
+# Helper 1: per-region z_min (TD-0018, DNA §2.1.6)
+# ---------------------------------------------------------------------------
+
+
+def get_zmin(centroid_lat: float, centroid_lon: float) -> float:
+    """
+    Return adaptive z_min для cluster centroid coordinates.
+
+    Per Algorithm §3.6 + TD-0018 Phase 1c handoff:
+      * Kuzbass region (lat∈[53,55], lon∈[86,88]) → 4.0 (strict — compounded
+        uncertainty: pre-fix mask gap + low Kuznetsky Alatau reference counts)
+      * Default → 3.0
+
+    DNA §2.1 запрет 6 — single global z_min prohibited. Orchestrator MUST call
+    this helper per-cluster after extraction; never pass single z_min to
+    apply_three_condition_mask globally over multi-region AOI.
+    """
+    in_kuzbass_lat = KUZBASS_LAT_RANGE[0] <= centroid_lat <= KUZBASS_LAT_RANGE[1]
+    in_kuzbass_lon = KUZBASS_LON_RANGE[0] <= centroid_lon <= KUZBASS_LON_RANGE[1]
+    if in_kuzbass_lat and in_kuzbass_lon:
+        return KUZBASS_Z_MIN
+    return DEFAULT_Z_MIN
+
+
+def build_zmin_filter() -> ee.Filter:
+    """
+    Server-side ee.Filter equivalent of get_zmin — для post-cluster filtering
+    в orchestrator after compute_cluster_attributes computes max_z + centroid.
+
+    Logic:
+        * Cluster outside Kuzbass region: max_z >= 3.0 (default) — already
+          enforced by upstream apply_three_condition_mask с z_min=3.0
+        * Cluster inside Kuzbass region: max_z >= 4.0 (strict)
+
+    Returns: ee.Filter that keeps clusters meeting their region's threshold.
+    """
+    # Kuzbass bounding box conditions (all must hold для "in Kuzbass")
+    in_kuzbass = ee.Filter.And(
+        ee.Filter.gte("centroid_lat", KUZBASS_LAT_RANGE[0]),
+        ee.Filter.lte("centroid_lat", KUZBASS_LAT_RANGE[1]),
+        ee.Filter.gte("centroid_lon", KUZBASS_LON_RANGE[0]),
+        ee.Filter.lte("centroid_lon", KUZBASS_LON_RANGE[1]),
+    )
+    # Outside Kuzbass: any of these (lat or lon out of range)
+    outside_kuzbass = ee.Filter.Or(
+        ee.Filter.lt("centroid_lat", KUZBASS_LAT_RANGE[0]),
+        ee.Filter.gt("centroid_lat", KUZBASS_LAT_RANGE[1]),
+        ee.Filter.lt("centroid_lon", KUZBASS_LON_RANGE[0]),
+        ee.Filter.gt("centroid_lon", KUZBASS_LON_RANGE[1]),
+    )
+    # Keep если: outside Kuzbass (default 3.0 already met by detection) OR
+    #            inside Kuzbass с max_z >= 4.0
+    keep_inside_kuzbass = ee.Filter.And(in_kuzbass, ee.Filter.gte("max_z", KUZBASS_Z_MIN))
+    return ee.Filter.Or(outside_kuzbass, keep_inside_kuzbass)
+
+
+# ---------------------------------------------------------------------------
+# Helper 2: TD-0017 transboundary easterly transport check (server-side)
+# ---------------------------------------------------------------------------
+
+
+def is_transboundary_candidate(centroid_lat: float, centroid_lon: float) -> bool:
+    """
+    Pure-Python check: does cluster centroid fall into TD-0017 risk zone?
+
+    Risk zone: lat ∈ [53, 56], lon ≥ 92 (eastern AOI edge — Krasnoyarsk
+    industrial cluster transport susceptible).
+    """
+    lat_ok = TRANSBOUNDARY_LAT_RANGE[0] <= centroid_lat <= TRANSBOUNDARY_LAT_RANGE[1]
+    lon_ok = centroid_lon >= TRANSBOUNDARY_LON_MIN
+    return lat_ok and lon_ok
+
+
+def annotate_transboundary_qa(
+    events_fc: ee.FeatureCollection,
+    era5_collection: ee.ImageCollection,
+    wind_level_hpa: int = 850,
+) -> ee.FeatureCollection:
+    """
+    TD-0017 LIGHT implementation: 24h-back ERA5 wind direction check.
+
+    For events с centroid lat∈[53,56] and lon≥92, sample ERA5 wind 24h prior
+    к event date at cluster centroid. If dominant direction easterly
+    (wind_dir ∈ [45°, 135°] FROM convention), add qa_flag
+    'transboundary_easterly_transport_suspected'.
+
+    NOT full HYSPLIT trajectory — that's deferred к Phase 6.
+
+    Args:
+        events_fc: FeatureCollection of clusters с centroid_lat/lon and orbit_date_millis
+        era5_collection: ee.ImageCollection("ECMWF/ERA5/HOURLY")
+        wind_level_hpa: ERA5 wind level (default 850, matches TD-0031)
+
+    Returns: FC с qa_flags potentially augmented для at-risk events.
+    """
+    band_u = f"u_component_of_wind_{wind_level_hpa}hPa"
+    band_v = f"v_component_of_wind_{wind_level_hpa}hPa"
+
+    def _check(feat: ee.Feature) -> ee.Feature:
+        centroid_lat = ee.Number(feat.get("centroid_lat"))
+        centroid_lon = ee.Number(feat.get("centroid_lon"))
+        # In risk zone?
+        in_lat = centroid_lat.gte(TRANSBOUNDARY_LAT_RANGE[0]).And(
+            centroid_lat.lte(TRANSBOUNDARY_LAT_RANGE[1])
+        )
+        in_lon = centroid_lon.gte(TRANSBOUNDARY_LON_MIN)
+        in_zone = in_lat.And(in_lon)
+
+        # Sample ERA5 24h prior
+        event_date = ee.Date(feat.get("orbit_date_millis"))
+        sample_date = event_date.advance(-TRANSBOUNDARY_BACK_HOURS, "hour")
+        # ±1 hour window around target time
+        wind_window = era5_collection.filterDate(
+            sample_date.advance(-1, "hour"), sample_date.advance(1, "hour")
+        ).select([band_u, band_v])
+        mean_wind = wind_window.mean()
+
+        centroid_geom = ee.Geometry.Point([centroid_lon, centroid_lat])
+        sample = mean_wind.reduceRegion(
+            reducer=ee.Reducer.first(), geometry=centroid_geom, scale=27830
+        )
+        u = ee.Number(sample.get(band_u))
+        v = ee.Number(sample.get(band_v))
+        # Wind FROM-direction (atmospheric convention; same formula as validate_wind)
+        wind_to_deg = u.atan2(v).multiply(180.0 / math.pi).add(360).mod(360)
+        wind_dir = wind_to_deg.add(180).mod(360)
+
+        easterly = wind_dir.gte(EASTERLY_RANGE_DEG[0]).And(wind_dir.lte(EASTERLY_RANGE_DEG[1]))
+        flag_applies = in_zone.And(easterly)
+
+        existing_flags = ee.List(feat.get("qa_flags"))
+        new_flag = "transboundary_easterly_transport_suspected"
+        new_flags = ee.Algorithms.If(flag_applies, existing_flags.add(new_flag), existing_flags)
+        return feat.set("qa_flags", new_flags).set(
+            "transboundary_back_wind_dir_deg",
+            ee.Algorithms.If(in_zone, wind_dir, None),
+        )
+
+    # Initialize qa_flags as empty list если absent (defensive — orchestrator should set)
+    initialized = events_fc.map(
+        lambda f: f.set(
+            "qa_flags", ee.List(ee.Algorithms.If(f.get("qa_flags"), f.get("qa_flags"), []))
+        )
+    )
+    return initialized.map(_check)
+
+
+# ---------------------------------------------------------------------------
+# Helper 3: TD-0021 zone-boundary step inflation
+# ---------------------------------------------------------------------------
+
+
+def zone_boundary_step_ppb(centroid_lat: float) -> float | None:
+    """
+    Return step_inflation_ppb для cluster near TD-0021 zone boundary.
+
+    Boundaries: 57.5°N (Kuznetsky → Yugansky), 62.0°N (Yugansky → Verkhne-Tazovsky).
+    Tolerance: ±100 km (approximation 0.9° latitude).
+
+    Returns: step_ppb (35 для 57.5°N, 16 для 62°N) или None если cluster
+    NOT near any boundary.
+
+    Phase 2A v1 implementation: returns step value; orchestrator decides
+    whether to inflate consistency_tolerance_ppb at event level (set
+    qa_flag 'zone_boundary_adjustment_applied').
+    """
+    tolerance_deg = ZONE_BOUNDARY_TOLERANCE_KM / KM_PER_DEG_LAT  # ≈ 0.9°
+    for boundary_lat in ZONE_BOUNDARIES_LAT:
+        if abs(centroid_lat - boundary_lat) <= tolerance_deg:
+            return ZONE_BOUNDARY_STEP_PPB[boundary_lat]
+    return None
+
+
+def annotate_zone_boundary_qa(events_fc: ee.FeatureCollection) -> ee.FeatureCollection:
+    """
+    TD-0021 zone-boundary adjustment annotation.
+
+    For events с centroid_lat near 57.5°N or 62.0°N (±100 km), add qa_flag
+    'zone_boundary_adjustment_applied' + property 'zone_boundary_step_ppb'.
+    Reference asset stays unchanged (RFC v2 Option B); event metadata
+    captures the inflation factor для downstream classification adjustment.
+
+    Server-side ee.Filter chain — boundaries hardcoded.
+    """
+
+    def _check(feat: ee.Feature) -> ee.Feature:
+        centroid_lat = ee.Number(feat.get("centroid_lat"))
+        tolerance_deg = ZONE_BOUNDARY_TOLERANCE_KM / KM_PER_DEG_LAT
+
+        near_57_5 = centroid_lat.subtract(57.5).abs().lte(tolerance_deg)
+        near_62_0 = centroid_lat.subtract(62.0).abs().lte(tolerance_deg)
+
+        # Step value: prioritize 57.5°N if both apply (impossible с 100km tolerance,
+        # но defensive)
+        step_ppb = ee.Number(
+            ee.Algorithms.If(
+                near_57_5,
+                ZONE_BOUNDARY_STEP_PPB[57.5],
+                ee.Algorithms.If(near_62_0, ZONE_BOUNDARY_STEP_PPB[62.0], 0),
+            )
+        )
+
+        applies = near_57_5.Or(near_62_0)
+        existing_flags = ee.List(feat.get("qa_flags"))
+        new_flag = "zone_boundary_adjustment_applied"
+        new_flags = ee.Algorithms.If(applies, existing_flags.add(new_flag), existing_flags)
+
+        return feat.set(
+            {
+                "qa_flags": new_flags,
+                "zone_boundary_step_ppb": ee.Algorithms.If(applies, step_ppb, None),
+            }
+        )
+
+    initialized = events_fc.map(
+        lambda f: f.set(
+            "qa_flags", ee.List(ee.Algorithms.If(f.get("qa_flags"), f.get("qa_flags"), []))
+        )
+    )
+    return initialized.map(_check)
+
+
+# ---------------------------------------------------------------------------
+# Helper 4: manual event overrides (Algorithm §6, event_overrides.json)
+# ---------------------------------------------------------------------------
+
+
+def load_event_overrides(overrides_path: str | Path) -> list[dict[str, Any]]:
+    """
+    Load manual override entries from JSON file.
+
+    Schema per entry:
+        {
+          "centroid_lat": <float>,
+          "centroid_lon": <float>,
+          "event_date": "YYYY-MM-DD",
+          "tolerance_km": <float, default 20>,
+          "tolerance_days": <int, default 2>,
+          "manual_source_id": <str>,
+          "manual_source_type": <str>,
+          "rationale": <str — short note for audit>
+        }
+
+    Returns: list of override dicts. Empty list если file absent/empty.
+    """
+    p = Path(overrides_path)
+    if not p.exists():
+        return []
+    try:
+        with open(p, encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return data
+
+
+def apply_event_overrides(
+    events_fc: ee.FeatureCollection, overrides: list[dict[str, Any]]
+) -> ee.FeatureCollection:
+    """
+    Apply manual attribution overrides к matching events.
+
+    For each override entry, find event(s) с centroid within tolerance_km
+    of override coords AND orbit_date within tolerance_days of override
+    event_date. Set manual_source_id/type + qa_flag
+    'manual_attribution_override'.
+
+    Server-side per-feature filter; iterate overrides client-side
+    (overrides count typically < 50 — manual review artifact).
+
+    Args:
+        events_fc: FC with centroid_lat, centroid_lon, orbit_date_millis,
+            qa_flags properties
+        overrides: list of override dicts (from load_event_overrides)
+
+    Returns: FC with overrides applied (or original FC если overrides empty).
+    """
+    if not overrides:
+        return events_fc
+
+    # Initialize qa_flags если absent
+    fc = events_fc.map(
+        lambda f: f.set(
+            "qa_flags", ee.List(ee.Algorithms.If(f.get("qa_flags"), f.get("qa_flags"), []))
+        )
+    )
+
+    for entry in overrides:
+        try:
+            ovr_lat = float(entry["centroid_lat"])
+            ovr_lon = float(entry["centroid_lon"])
+            ovr_date_str = str(entry["event_date"])
+            tol_km = float(entry.get("tolerance_km", 20))
+            tol_days = int(entry.get("tolerance_days", 2))
+            manual_id = entry.get("manual_source_id")
+            manual_type = entry.get("manual_source_type")
+        except (KeyError, ValueError, TypeError):
+            continue  # malformed entry — skip
+
+        ovr_date = ee.Date(ovr_date_str)
+        date_min = ovr_date.advance(-tol_days, "day").millis()
+        date_max = ovr_date.advance(tol_days + 1, "day").millis()
+        # Spatial tolerance в degrees (rough — orchestrator-side filter; precise
+        # filtering would require geometry distance, deferred к Шаг 6 если needed)
+        tol_lat_deg = tol_km / KM_PER_DEG_LAT
+        tol_lon_deg = tol_km / (KM_PER_DEG_LAT * math.cos(math.radians(ovr_lat)))
+
+        def _apply(
+            feat: ee.Feature,
+            _ovr_lat: float = ovr_lat,
+            _ovr_lon: float = ovr_lon,
+            _tol_lat: float = tol_lat_deg,
+            _tol_lon: float = tol_lon_deg,
+            _date_min: ee.Number = date_min,
+            _date_max: ee.Number = date_max,
+            _manual_id: Any = manual_id,
+            _manual_type: Any = manual_type,
+        ) -> ee.Feature:
+            lat = ee.Number(feat.get("centroid_lat"))
+            lon = ee.Number(feat.get("centroid_lon"))
+            ts = ee.Number(feat.get("orbit_date_millis"))
+            lat_match = lat.subtract(_ovr_lat).abs().lte(_tol_lat)
+            lon_match = lon.subtract(_ovr_lon).abs().lte(_tol_lon)
+            date_match = ts.gte(_date_min).And(ts.lte(_date_max))
+            matches = lat_match.And(lon_match).And(date_match)
+
+            existing = ee.List(feat.get("qa_flags"))
+            new_flag = "manual_attribution_override"
+            new_flags = ee.Algorithms.If(matches, existing.add(new_flag), existing)
+
+            return feat.set(
+                {
+                    "qa_flags": new_flags,
+                    "manual_source_id": ee.Algorithms.If(
+                        matches, _manual_id, feat.get("manual_source_id")
+                    ),
+                    "manual_source_type": ee.Algorithms.If(
+                        matches, _manual_type, feat.get("manual_source_type")
+                    ),
+                }
+            )
+
+        fc = fc.map(_apply)
+
+    return fc
+
+
+# ---------------------------------------------------------------------------
+# Helper 5: build_event_config for compute_provenance
+# ---------------------------------------------------------------------------
+
+
+def build_event_config(target_year: int, *, config_preset: str = "default") -> dict[str, Any]:
+    """
+    Construct config dict для CH4 event catalog Run.
+
+    Per Algorithm §2.4 Configuration Preset structure. Used as input к
+    `compute_provenance(config) → Provenance` at orchestrator process start.
+
+    Pin all algorithmic parameters here — provenance hash captures them
+    for reproducibility (DNA §2.1 запрет 12).
+    """
+    return {
+        "config_preset": config_preset,
+        "phase": "P-02.0a",
+        "gas": "CH4",
+        "history_year_min": 2019,
+        "history_year_max": 2025,
+        "target_year": target_year,
+        "operation": "ch4_event_catalog_build",
+        # Detection thresholds (Algorithm §3.5-§3.6)
+        "anomaly": {
+            "z_min_default": DEFAULT_Z_MIN,
+            "z_min_kuzbass": KUZBASS_Z_MIN,
+            "delta_min_ppb": 30.0,
+            "relative_min_ppb": 15.0,
+            "annulus_outer_km": 150,
+        },
+        # Background mode (Algorithm §3.4.3 / §3.5)
+        "background": {
+            "primary": "reference",
+            "mode": "reference_only",  # TD-0032 — Phase 2A v1 simplification
+            "consistency_tolerance_ppb": 30.0,
+            "sigma_floor_ppb": 15.0,
+        },
+        # Cluster extraction (Algorithm §3.7)
+        "object": {
+            "min_pixels": 5,
+            "max_size": 256,
+            "connectedness": 8,
+        },
+        # Wind validation (Algorithm §3.9, TD-0031)
+        "wind": {
+            "level_hpa": 850,
+            "alignment_threshold_deg": 30.0,
+            "min_wind_speed_ms": 2.0,
+            "temporal_window_hours": 3,
+        },
+        # Source attribution (Algorithm §3.10)
+        "source_attribution": {
+            "search_radius_km": 50.0,
+            "type_priorities": "SOURCE_TYPE_PRIORITIES_CH4",
+        },
+        # TD-0017 transboundary
+        "transboundary": {
+            "lat_range": list(TRANSBOUNDARY_LAT_RANGE),
+            "lon_min": TRANSBOUNDARY_LON_MIN,
+            "back_trajectory_hours": TRANSBOUNDARY_BACK_HOURS,
+            "easterly_range_deg": list(EASTERLY_RANGE_DEG),
+        },
+        # TD-0021 zone-boundary
+        "zone_boundary": {
+            "boundaries_lat": ZONE_BOUNDARIES_LAT,
+            "step_inflation_ppb": {str(k): v for k, v in ZONE_BOUNDARY_STEP_PPB.items()},
+            "tolerance_km": ZONE_BOUNDARY_TOLERANCE_KM,
+        },
+        "build_pipeline": "src/py/setup/build_ch4_event_catalog.py",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Module exports
+# ---------------------------------------------------------------------------
+
+__all__ = [
+    "DEFAULT_Z_MIN",
+    "KUZBASS_Z_MIN",
+    "KUZBASS_LAT_RANGE",
+    "KUZBASS_LON_RANGE",
+    "TRANSBOUNDARY_LAT_RANGE",
+    "TRANSBOUNDARY_LON_MIN",
+    "TRANSBOUNDARY_BACK_HOURS",
+    "EASTERLY_RANGE_DEG",
+    "ZONE_BOUNDARIES_LAT",
+    "ZONE_BOUNDARY_STEP_PPB",
+    "ZONE_BOUNDARY_TOLERANCE_KM",
+    "get_zmin",
+    "build_zmin_filter",
+    "is_transboundary_candidate",
+    "annotate_transboundary_qa",
+    "zone_boundary_step_ppb",
+    "annotate_zone_boundary_qa",
+    "load_event_overrides",
+    "apply_event_overrides",
+    "build_event_config",
+]

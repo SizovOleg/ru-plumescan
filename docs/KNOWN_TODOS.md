@@ -11,6 +11,55 @@ deferrals**, не для architectural changes.
 
 ---
 
+## TD-0032 NEW — Consistency-driven primary switch (Algorithm §3.5) **[LOW priority — Phase 2A v1.1 backlog]**
+
+- **Origin:** P-02.0a Шаг 4 GPT review #2 (2026-05-05) — accepted simplification.
+- **Status:** documented gap — explicitly tracked для honest scope.
+- **Issue:** `build_hybrid_background()` currently implements `mode='reference_only'`
+  per Algorithm §3.5 — primary baseline always uses reference where defined,
+  regardless of `consistency_flag` value. The full consistency-driven primary
+  switch (Algorithm §3.5 lines 818-826):
+  ```javascript
+  const use_reference_primary = config.background.mode === 'reference_only' ||
+                                  consistency.eq(1).and(config.background.primary === 'reference');
+  ```
+  is deferred. `consistency_flag` is metadata only в v1; the metadata is
+  available к downstream classification cascade (Шаг 6 wetland heuristic), но
+  primary selection itself does not consult it.
+- **Implications:** When consistency_flag=false (baselines diverge by >30 ppb),
+  pixel uses reference value anyway. Researcher decision Шаг 4 GPT review:
+  reference is methodology anchor (clean-zone baseline), regional fallback only
+  for masked pixels. This is more conservative than `mode='hybrid'` would be.
+- **Trigger для активации:** if Phase 2A validation reveals systematic divergence
+  between baselines в areas where regional is more accurate (e.g., wide gas
+  fields where reference baseline biased), revisit к add full mode='hybrid'
+  path.
+- **Effort:** ~30 LoC orchestrator-side mode parameter + Algorithm.md §3.5 update
+  + 4-6 new tests (consistent → ref, divergent + mode=hybrid → reg, divergent
+  + mode=reference_only → ref). ~3-4 hours.
+- **Dependency:** Phase 2A v1.0 closure + sensitivity test results.
+- **Reference:** Algorithm.md §3.5 lines 901-906 inline note.
+
+---
+
+## TD-0033 NEW — Шаг 7 Kuzbass regression integration test should exercise wind_state='insufficient_wind' branch **[LOW priority]**
+
+- **Origin:** P-02.0a Шаг 4 GPT review #2 (2026-05-05) — non-blocking observation.
+- **Status:** TBD when Шаг 7 implemented.
+- **Issue:** Current `test_detection_ch4_integration.py` covers `wind_state='axis_unknown'`
+  branch (cluster без `plume_axis_deg`). Other 3 wind_state branches (`aligned`,
+  `misaligned`, `insufficient_wind`) NOT exercised by integration suite — only
+  by unit-level math tests against the reference formula.
+- **Trigger:** Phase 2A Шаг 7 implementation (Kuzbass 2022-09-20 regression test).
+- **What's deferred:** Add synthetic low-wind case (e.g., u=0.5, v=0.5 m/s,
+  wind_speed = 0.71 m/s < 2.0 threshold) to integration suite. Verify
+  `wind_state='insufficient_wind'` and `wind_consistent=null`. Likely 1-2
+  additional integration tests + 1 setup helper.
+- **Effort:** ~30 minutes during Шаг 7 implementation.
+- **Reference:** GPT review #2 final recommendation (non-blocking).
+
+---
+
 ## TD-0025 NEW — Integrate compute_provenance directly в build scripts **[HIGH PRIORITY]**
 
 - **Origin:** P-01.0c closure observation 2026-05-04 (researcher review of TD-0024 backfill outcomes).

@@ -250,6 +250,11 @@ def extract_clusters(
     Algorithm §3.7: connectedComponents 8-conn (default), min cluster size filter.
 
     `min_cluster_px=5` ≈ 245 km² minimum signal area at 7 km grid.
+
+    GPT review #1 follow-up (Issue 2.2 — discovered Шаг 5 integration test):
+    `connectedComponents` returns multi-band image (input band + 'labels').
+    Downstream `reduceToVectors` requires single-band, поэтому explicit
+    .select('labels') before returning ensures single-band output.
     """
     # 8-connected = ee.Kernel.square(1); 4-connected = ee.Kernel.plus(1)
     kernel = ee.Kernel.square(1) if connectedness == 8 else ee.Kernel.plus(1)
@@ -262,7 +267,8 @@ def extract_clusters(
     )
     significant = pixel_counts.gte(min_cluster_px)
 
-    return labeled.updateMask(significant)
+    # Select labels band only — connectedComponents preserves input band, нам нужен только labels
+    return labeled.select("labels").updateMask(significant)
 
 
 # ---------------------------------------------------------------------------
