@@ -641,6 +641,38 @@ engineered.
 XCH4 by wetland zone) and table 4 (annual trend, +9 ppb/year). См.
 `docs/p-01.0a_validation_report.md` для side-by-side comparison.
 
+#### 3.4.1.1. Per-source-type buffer (NEW в v2.3.1 / P-01.0d, TD-0027)
+
+Industrial mask construction extended к use **per-source-type buffer** instead of uniform 30 km. Per-feature classification (`src/py/rca/classify_source_types.py`):
+
+| source_type / subtype | category | buffer_km |
+|-----------------------|----------|----------:|
+| oil_gas / production_field | gas_field | **50** |
+| oil_gas / viirs_flare_proxy + radiance ≥100 nW/cm²/sr | viirs_flare_high | 30 |
+| oil_gas / viirs_flare_proxy + radiance <100 | viirs_flare_low | 15 |
+| power_plant / coal\|gas\|tpp_gas | tpp_gres | 30 |
+| power_plant / hydro\|nuclear | (DROPPED) | — |
+| coal_mine | coal_mine | 30 |
+| metallurgy | smelter | 30 |
+
+**Rationale:** P-01.2 dual baseline cross-check identified Tambeyskoye gas field as suspect cluster #4 (mean Δ=59.6 ppb после 30 km uniform buffer). Major gas extraction infrastructure spans 50+ km — uniform 30 km buffer insufficient. Hydro/nuclear emit no detection-relevant gases — exclude entirely (cleaner semantics than 0 km).
+
+VIIRS radiance-differentiated buffer: high-radiance flares (≥100 nW/cm²/sr) likely persistent gas-processing facilities → 30 km; localized low-radiance flares → 15 km.
+
+Asset: `RuPlumeScan/industrial/proxy_mask_buffered_per_type` (replaces uniform `proxy_mask_buffered_30km` for new builds; old kept для backward-compat).
+
+#### 3.4.1.2. Urban masking (NEW в v2.3.1 / P-01.0d, TD-0023)
+
+NO₂/SO₂ regional baselines additionally mask **urban areas** identified via JRC Global Human Settlement Layer (GHS-SMOD 2030, 1 km native). Threshold ≥22 = semi-dense urban cluster + urban centre.
+
+**Rationale:** anthropogenic NO₂/SO₂ emissions от urban transport / heating systems / construction confound regional baseline. P-01.0b finding: cities like Tyumen / Surgut / Novokuznetsk previously masked only via collocated TPP buffer, не by urban definition itself. Now both masks combined: `clean ↔ industrial-non-buffered AND non-urban`.
+
+Reprojection convention: GHS-SMOD 1 km → analysis 7 km via `reduceResolution(MAX)` — any 1 km urban pixel → 7 km cell urban (conservative; avoids dilution at city boundaries).
+
+Asset: `RuPlumeScan/urban/urban_mask_smod22`. Urban masking applied при `--use-urban-mask` flag в `build_regional_climatology.py`.
+
+CH₄ regional baseline does NOT apply urban masking — methane sources include wetlands (rural) и urban gas leakage; urban exclusion would lose signal. NO₂/SO₂ urban-source confounding far stronger.
+
 #### 3.4.1. Regional climatology с industrial buffer (secondary, broader coverage)
 
 **Это existing approach из v2.2, теперь secondary.**

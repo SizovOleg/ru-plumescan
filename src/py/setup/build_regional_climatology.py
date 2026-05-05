@@ -53,6 +53,13 @@ from pathlib import Path
 
 import ee
 
+# Allow `from rca.provenance import ...` whether script run as module
+# (cd src/py; python -m setup.build_regional_climatology) или as path
+# (python src/py/setup/build_regional_climatology.py).
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(_REPO_ROOT / "src" / "py") not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT / "src" / "py"))
+
 PROJECT_ID = "nodal-thunder-481307-u1"
 ASSETS_ROOT = f"projects/{PROJECT_ID}/assets"
 INDUSTRIAL_MASK_ASSET = f"{ASSETS_ROOT}/RuPlumeScan/industrial/proxy_mask"
@@ -174,27 +181,39 @@ def apply_qa_filter(img: ee.Image, gas_meta: dict) -> ee.Image:
 
 
 PREBUILT_MASK_ASSET = f"{ASSETS_ROOT}/RuPlumeScan/industrial/proxy_mask_buffered_30km"
+PER_TYPE_MASK_ASSET = f"{ASSETS_ROOT}/RuPlumeScan/industrial/proxy_mask_buffered_per_type"
+URBAN_MASK_ASSET = f"{ASSETS_ROOT}/RuPlumeScan/urban/urban_mask_smod22"
 
 
-def build_clean_mask(buffer_km: int, use_prebuilt: bool = False) -> ee.Image:
+def build_clean_mask(
+    buffer_km: int,
+    use_prebuilt: bool = False,
+    use_per_type: bool = False,
+    use_urban_mask: bool = False,
+) -> ee.Image:
     """
     Industrial buffer exclusion mask: 1=clean, 0=industrial-buffered.
 
-    Two modes:
-      * `use_prebuilt=True` — load `proxy_mask_buffered_30km` Asset (one-time
-        pre-computed по TD-0011). Skip on-the-fly focal_max — saves ~1.5 hours
-        per gas batch run.
+    Modes (priority: per-type > prebuilt > on-the-fly):
+      * `use_per_type=True` (P-01.0d, TD-0027) — load
+        `proxy_mask_buffered_per_type` (heterogeneous buffer 50/30/15 km
+        per source category). When combined с `use_urban_mask=True`,
+        AND-merges с GHS-SMOD ≥22 urban exclusion (TD-0023). Recommended
+        для new regional baselines after P-01.0d.
+      * `use_prebuilt=True` (legacy, P-01.0b TD-0011) — load
+        `proxy_mask_buffered_30km` (uniform 30 km buffer). Saved ~1.5 hours
+        per gas vs on-the-fly. Pre-P-01.0d clean mask.
       * `use_prebuilt=False` (default) — on-the-fly: load `proxy_mask` (P-00.1,
         already 15 km buffered) + apply focal_max(buffer_km) → effective
-        (15 + buffer_km) km exclusion. Default buffer_km=15 → 30 km effective
-        per Algorithm §3.4.1.
-
-    Mode mismatch warning: switching mid-pipeline (M01-M05 без prebuilt,
-    M06-M12 с prebuilt) **может дать bit-different output** при boundary
-    pixels из-за numerical precision. Prebuilt mask строится также через
-    focal_max(15km) over identical proxy_mask, so theoretically identical;
-    в practice there might be edge-case differences.
+        (15 + buffer_km) km exclusion.
     """
+    if use_per_type:
+        per_type = ee.Image(PER_TYPE_MASK_ASSET).unmask(0)
+        if use_urban_mask:
+            # combined: clean ↔ industrial-clean AND non-urban
+            urban = ee.Image(URBAN_MASK_ASSET).unmask(0)
+            return per_type.And(urban).rename("industrial_clean_mask").uint8()
+        return per_type
     if use_prebuilt:
         return ee.Image(PREBUILT_MASK_ASSET).unmask(0)
     return (
@@ -211,6 +230,8 @@ def build_monthly_image(
     target_month: int,
     buffer_km: int,
     use_prebuilt_mask: bool = False,
+    use_per_type_mask: bool = False,
+    use_urban_mask: bool = False,
 ) -> ee.Image:
     """
     Per-pixel monthly climatology Image: 3 bands [median, sigma, count].
@@ -235,8 +256,14 @@ def build_monthly_image(
         .select([gas_meta["band"]])
     )
 
-    # Apply industrial buffer (либо on-the-fly либо pre-computed Asset)
-    clean_mask = build_clean_mask(buffer_km, use_prebuilt=use_prebuilt_mask)
+    # Apply industrial buffer (per-type post-P-01.0d, prebuilt P-01.0b, или on-the-fly).
+    # Optionally combined с urban_mask (P-01.0d, TD-0023).
+    clean_mask = build_clean_mask(
+        buffer_km,
+        use_prebuilt=use_prebuilt_mask,
+        use_per_type=use_per_type_mask,
+        use_urban_mask=use_urban_mask,
+    )
     masked_coll = coll.map(lambda img: img.updateMask(clean_mask))
 
     # Per-pixel reductions
@@ -260,16 +287,36 @@ def launch_monthly_task(
     buffer_km: int,
     logger: logging.Logger,
     use_prebuilt_mask: bool = False,
+    use_per_type_mask: bool = False,
+    use_urban_mask: bool = False,
+    provenance: object | None = None,
 ) -> dict:
     """
     Launch single monthly batch task.
+
+    Per TD-0024 / TD-0025: when `provenance` passed, applies canonical Provenance
+    properties natively at Export time (instead of post-hoc setAssetProperties в
+    closure scripts). Same Provenance instance flows through entire run.
 
     Returns dict с {month, task_id, asset_path, state, started_at}.
     """
     aoi = ee.Geometry.Rectangle(list(AOI_BBOX))
     monthly_img = build_monthly_image(
-        gas, target_year, target_month, buffer_km, use_prebuilt_mask=use_prebuilt_mask
+        gas,
+        target_year,
+        target_month,
+        buffer_km,
+        use_prebuilt_mask=use_prebuilt_mask,
+        use_per_type_mask=use_per_type_mask,
+        use_urban_mask=use_urban_mask,
     )
+
+    if use_per_type_mask:
+        mask_mode = "per_type_buffered"
+    elif use_prebuilt_mask:
+        mask_mode = "prebuilt_uniform_30km"
+    else:
+        mask_mode = "on_the_fly_focal_max"
 
     metadata = {
         "algorithm_version": "2.3",
@@ -277,8 +324,9 @@ def launch_monthly_task(
         "build_date": str(date.today()),
         "baseline_type": "regional",
         "baseline_method": "industrial_buffer_exclusion",
-        "industrial_buffer_km": 30,  # effective 30 km regardless of mode
-        "mask_mode": "prebuilt_asset" if use_prebuilt_mask else "on_the_fly_focal_max",
+        "industrial_buffer_km": "per_type" if use_per_type_mask else 30,
+        "mask_mode": mask_mode,
+        "urban_mask_applied": use_urban_mask,
         "gas": gas,
         "target_year": target_year,
         "target_month": target_month,
@@ -288,6 +336,10 @@ def launch_monthly_task(
         "td_0008_option": "C",
         "build_pipeline": "src/py/setup/build_regional_climatology.py",
     }
+    # Native Provenance pattern (TD-0025): caller passes Provenance object;
+    # we embed canonical fields так asset gets them at Export time, не post-hoc.
+    if provenance is not None:
+        metadata = {**metadata, **provenance.to_asset_properties()}
     monthly_img = monthly_img.set(metadata)
 
     asset_path = TEMP_ASSET_TEMPLATE.format(gas=gas, year=target_year, month=target_month)
@@ -361,7 +413,11 @@ def poll_tasks(tasks: list[dict], timeout_minutes: int, logger: logging.Logger) 
 
 
 def combine_monthly_assets(
-    gas: str, target_year: int, tasks: list[dict], logger: logging.Logger
+    gas: str,
+    target_year: int,
+    tasks: list[dict],
+    logger: logging.Logger,
+    provenance: object | None = None,
 ) -> str | None:
     """
     Combine successful per-month temp assets в final multi-band Image.
@@ -409,6 +465,9 @@ def combine_monthly_assets(
             )
         ),
     }
+    # TD-0025: native Provenance applied at Export, не post-hoc.
+    if provenance is not None:
+        final_metadata = {**final_metadata, **provenance.to_asset_properties()}
     combined = combined.set(final_metadata)
 
     final_path = FINAL_ASSET_TEMPLATE.format(gas=gas, year=target_year)
@@ -497,6 +556,18 @@ def main() -> int:
         help="Use pre-computed RuPlumeScan/industrial/proxy_mask_buffered_30km Asset "
         "вместо on-the-fly focal_max. ~1.5h faster per gas. См. TD-0011.",
     )
+    parser.add_argument(
+        "--use-per-type-mask",
+        action="store_true",
+        help="Use pre-computed RuPlumeScan/industrial/proxy_mask_buffered_per_type "
+        "(P-01.0d, TD-0027). Heterogeneous buffers: gas_field 50 km, others 30/15.",
+    )
+    parser.add_argument(
+        "--use-urban-mask",
+        action="store_true",
+        help="Combine с RuPlumeScan/urban/urban_mask_smod22 (P-01.0d, TD-0023). "
+        "AND-merge: clean ↔ industrial-clean AND non-urban.",
+    )
     args = parser.parse_args()
 
     logger = setup_logger()
@@ -506,6 +577,50 @@ def main() -> int:
         args.gas,
         args.target_year,
         args.buffer_km,
+    )
+
+    # === Canonical Provenance pattern (TD-0024 / TD-0025) ===
+    # Compute ONCE at process start; pass through all subsequent operations.
+    # Lazy import to keep module-load cheap для tests / poll-only runs.
+    from rca.provenance import compute_provenance, write_provenance_log
+
+    cfg = {
+        "phase": "P-01.0b" if not args.use_per_type_mask else "P-01.0d",
+        "operation": "regional_climatology_build",
+        "gas": args.gas,
+        "target_year": args.target_year,
+        "history_year_min": 2019,
+        "history_year_max": args.target_year - 1,
+        "doy_window_half_days": 30,
+        "aoi_bbox": list(AOI_BBOX),
+        "analysis_scale_m": ANALYSIS_SCALE_M,
+        "buffer_km_focal_max": args.buffer_km,
+        "use_prebuilt_mask": args.use_prebuilt_mask,
+        "use_per_type_mask": args.use_per_type_mask,
+        "use_urban_mask": args.use_urban_mask,
+        "tropomi_collection": GAS_COLLECTIONS[args.gas]["id"],
+        "tropomi_band": GAS_COLLECTIONS[args.gas]["band"],
+        "qa_filters": {
+            "qa_bands": GAS_COLLECTIONS[args.gas].get("qa_bands", []),
+            "physical_range": GAS_COLLECTIONS[args.gas].get("physical_range"),
+            "negative_floor": GAS_COLLECTIONS[args.gas].get("negative_floor"),
+            "cloud_fraction_max": GAS_COLLECTIONS[args.gas].get("cloud_fraction_max"),
+        },
+        "orchestrator": "TD-0008_Option_C",
+        "build_pipeline": "src/py/setup/build_regional_climatology.py",
+    }
+    period = f"{cfg['history_year_min']}_{cfg['history_year_max'] + 1}"
+    provenance = compute_provenance(
+        config=cfg,
+        config_id="default",
+        period=period,
+        algorithm_version="2.3",
+        rna_version="1.2",
+    )
+    logger.info(
+        "Provenance computed once: run_id=%s params_hash=%s",
+        provenance.run_id,
+        provenance.params_hash[:8],
     )
 
     if args.poll_only or args.combine_only:
@@ -544,6 +659,20 @@ def main() -> int:
         else:
             tasks = []
 
+        # Write STARTED log entry once, before submitting any tasks
+        write_provenance_log(
+            provenance,
+            status="STARTED",
+            gas=args.gas,
+            period=period,
+            asset_id=FINAL_ASSET_TEMPLATE.format(gas=args.gas, year=args.target_year),
+            extra={
+                "phase": cfg["phase"],
+                "n_months_to_launch": len(months_to_run),
+                "operation": "regional_climatology_build",
+            },
+        )
+
         for i, m in enumerate(months_to_run):
             record = launch_monthly_task(
                 args.gas,
@@ -552,6 +681,9 @@ def main() -> int:
                 args.buffer_km,
                 logger,
                 use_prebuilt_mask=args.use_prebuilt_mask,
+                use_per_type_mask=args.use_per_type_mask,
+                use_urban_mask=args.use_urban_mask,
+                provenance=provenance,
             )
             tasks.append(record)
             save_state(
@@ -620,11 +752,37 @@ def main() -> int:
 
     if args.combine_only or len(succeeded) > 0:
         logger.info("=== Combining %d successful monthly assets ===", len(succeeded))
-        final_path = combine_monthly_assets(args.gas, args.target_year, tasks, logger)
+        final_path = combine_monthly_assets(
+            args.gas, args.target_year, tasks, logger, provenance=provenance
+        )
         if final_path:
             logger.info("Final asset export task started: %s", final_path)
             logger.info(
                 "После combine SUCCEEDED — run with --combine-only re-tries cleanup if needed"
+            )
+            # Write SUCCEEDED log entry с canonical Provenance (TD-0024 pattern)
+            write_provenance_log(
+                provenance,
+                status="SUCCEEDED" if len(succeeded) == 12 else "PARTIAL",
+                gas=args.gas,
+                period=period,
+                asset_id=final_path,
+                extra={
+                    "phase": cfg["phase"],
+                    "n_succeeded": len(succeeded),
+                    "n_failed": len(failed),
+                    "td_0008_outcome": outcome,
+                    "operation": "regional_climatology_build",
+                    "mask_mode": (
+                        "per_type_with_urban"
+                        if args.use_per_type_mask and args.use_urban_mask
+                        else (
+                            "per_type"
+                            if args.use_per_type_mask
+                            else "uniform_30km_prebuilt" if args.use_prebuilt_mask else "on_the_fly"
+                        )
+                    ),
+                },
             )
 
     return 0
